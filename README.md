@@ -1,2 +1,2 @@
 # airquality-workflow
-Air Quality Workflow - Pegasus WMS on FABRIC
+A Pegasus workflow system for processing air quality sensor data from OpenAQ to detect anomalies and analyze pollutant trends. 
