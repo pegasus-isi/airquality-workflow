@@ -93,6 +93,12 @@ Forecast Pipeline:
           Fetch Historical Data → Prepare Features → Train LSTM → Generate Forecast → Visualize
 ```
 
+### DAG Visualization
+
+The following diagram shows the workflow DAG for a single location:
+
+![Air Quality Workflow DAG](output/air-workflow-single.png)
+
 ### Components
 
 | Component | Purpose | Memory | Container |

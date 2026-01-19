@@ -1,0 +1,46 @@
+{
+  "location": "Illmitz am Neusiedler See",
+  "time_range": {
+    "start": "2024-01-14 23:00:00+00:00",
+    "end": "2024-01-15 23:00:00+00:00"
+  },
+  "parameters": {
+    "o3": {
+      "count": 2,
+      "mean_concentration": 64.0,
+      "min_concentration": 61.5,
+      "max_concentration": 66.5,
+      "std_concentration": 3.5355339059327378,
+      "mean_aqi": 80.4,
+      "max_aqi": 88.6,
+      "category_distribution": {
+        "Moderate": 2
+      }
+    },
+    "pm10": {
+      "count": 2,
+      "mean_concentration": 10.940000000000001,
+      "min_concentration": 7.58,
+      "max_concentration": 14.3,
+      "std_concentration": 4.7517575695736,
+      "mean_aqi": 10.1,
+      "max_aqi": 13.2,
+      "category_distribution": {
+        "Good": 2
+      }
+    },
+    "pm25": {
+      "count": 2,
+      "mean_concentration": 9.415,
+      "min_concentration": 6.23,
+      "max_concentration": 12.6,
+      "std_concentration": 4.504270196158307,
+      "mean_aqi": 39.05,
+      "max_aqi": 52.1,
+      "category_distribution": {
+        "Moderate": 1,
+        "Good": 1
+      }
+    }
+  }
+}

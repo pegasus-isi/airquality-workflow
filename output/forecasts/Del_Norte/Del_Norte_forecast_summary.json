@@ -1,0 +1,23 @@
+{
+  "location": "Del Norte",
+  "forecast_generated": "2026-01-19T02:20:16.154556",
+  "historical_period": {
+    "start": "2024-01-15T07:00:00+00:00",
+    "end": "2024-01-16T07:00:00+00:00",
+    "hours": 25
+  },
+  "forecast_period": {
+    "start": "2024-01-16T08:00:00+00:00",
+    "end": "2024-01-18T07:00:00+00:00",
+    "hours": 48
+  },
+  "forecast_statistics": {
+    "mean_aqi": 0.10906040761619806,
+    "min_aqi": 0.09194489568471909,
+    "max_aqi": 0.11757964640855789,
+    "std_aqi": 0.00567499042921817
+  },
+  "category_distribution": {
+    "Good": 48
+  }
+}

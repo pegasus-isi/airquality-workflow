@@ -1,0 +1,57 @@
+{
+  "location": "FRANCONIA",
+  "time_range": {
+    "start": "2024-01-15 05:00:00+00:00",
+    "end": "2024-01-16 05:00:00+00:00"
+  },
+  "parameters": {
+    "o3": {
+      "count": 2,
+      "mean_concentration": 0.026099999999999998,
+      "min_concentration": 0.0235,
+      "max_concentration": 0.0287,
+      "std_concentration": 0.003676955262170047,
+      "mean_aqi": 0.0,
+      "max_aqi": 0.0,
+      "category_distribution": {
+        "Good": 2
+      }
+    },
+    "pm10": {
+      "count": 2,
+      "mean_concentration": 9.215,
+      "min_concentration": 7.13,
+      "max_concentration": 11.3,
+      "std_concentration": 2.9486352775479037,
+      "mean_aqi": 8.55,
+      "max_aqi": 10.5,
+      "category_distribution": {
+        "Good": 2
+      }
+    },
+    "pm25": {
+      "count": 2,
+      "mean_concentration": 6.845,
+      "min_concentration": 5.35,
+      "max_concentration": 8.34,
+      "std_concentration": 2.114249275747777,
+      "mean_aqi": 28.549999999999997,
+      "max_aqi": 34.8,
+      "category_distribution": {
+        "Good": 2
+      }
+    },
+    "so2": {
+      "count": 2,
+      "mean_concentration": 0.0007195000000000001,
+      "min_concentration": 0.000648,
+      "max_concentration": 0.000791,
+      "std_concentration": 0.00010111626970967629,
+      "mean_aqi": null,
+      "max_aqi": null,
+      "category_distribution": {
+        "Unknown": 2
+      }
+    }
+  }
+}

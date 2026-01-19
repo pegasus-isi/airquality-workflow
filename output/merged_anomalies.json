@@ -1,0 +1,49 @@
+{
+  "locations": {
+    "Del Norte": {
+      "location": "Del Norte",
+      "analysis_period": {
+        "start": "2024-01-15 07:00:00+00:00",
+        "end": "2024-01-16 07:00:00+00:00"
+      },
+      "total_measurements": 6,
+      "anomalies": {
+        "statistical_outliers": [],
+        "sustained_high_aqi": [],
+        "sudden_spikes": []
+      },
+      "summary": {
+        "total_outliers": 0,
+        "total_sustained_alerts": 0,
+        "total_spikes": 0,
+        "parameters_affected": []
+      }
+    },
+    "Illmitz am Neusiedler See": {
+      "location": "Illmitz am Neusiedler See",
+      "analysis_period": {
+        "start": "2024-01-14 23:00:00+00:00",
+        "end": "2024-01-15 23:00:00+00:00"
+      },
+      "total_measurements": 6,
+      "anomalies": {
+        "statistical_outliers": [],
+        "sustained_high_aqi": [],
+        "sudden_spikes": []
+      },
+      "summary": {
+        "total_outliers": 0,
+        "total_sustained_alerts": 0,
+        "total_spikes": 0,
+        "parameters_affected": []
+      }
+    }
+  },
+  "summary": {
+    "total_locations": 2,
+    "total_outliers": 0,
+    "total_sustained_alerts": 0,
+    "total_spikes": 0,
+    "all_parameters": []
+  }
+}

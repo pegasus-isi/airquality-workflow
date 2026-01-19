@@ -1,0 +1,350 @@
+{
+  "location": "Del Norte",
+  "forecast_generated": "2026-01-19T02:20:16.154556",
+  "forecast_start": "2024-01-16T08:00:00+00:00",
+  "forecast_horizon_hours": 48,
+  "model_info": {
+    "architecture": "LSTM",
+    "input_size": 195,
+    "hidden_size": 128,
+    "num_layers": 2
+  },
+  "predictions": [
+    {
+      "datetime": "2024-01-16T08:00:00+00:00",
+      "predicted_aqi": 0.10655061155557632,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.70655059814453,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T09:00:00+00:00",
+      "predicted_aqi": 0.11023781448602676,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.710237503051758,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T10:00:00+00:00",
+      "predicted_aqi": 0.11065936088562012,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71065902709961,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T11:00:00+00:00",
+      "predicted_aqi": 0.11374422907829285,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.7137451171875,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T12:00:00+00:00",
+      "predicted_aqi": 0.11266382783651352,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.712663650512695,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T13:00:00+00:00",
+      "predicted_aqi": 0.1121549904346466,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.712156295776367,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T14:00:00+00:00",
+      "predicted_aqi": 0.11344075947999954,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.713441848754883,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T15:00:00+00:00",
+      "predicted_aqi": 0.10496239364147186,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.70496368408203,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T16:00:00+00:00",
+      "predicted_aqi": 0.10884150862693787,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.70884132385254,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T17:00:00+00:00",
+      "predicted_aqi": 0.10977542400360107,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.709775924682617,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T18:00:00+00:00",
+      "predicted_aqi": 0.11338682472705841,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71338653564453,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T19:00:00+00:00",
+      "predicted_aqi": 0.10972438007593155,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.70972442626953,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T20:00:00+00:00",
+      "predicted_aqi": 0.11583831161260605,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.715839385986328,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T21:00:00+00:00",
+      "predicted_aqi": 0.11527945101261139,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.715280532836914,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T22:00:00+00:00",
+      "predicted_aqi": 0.11757964640855789,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.717580795288086,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-16T23:00:00+00:00",
+      "predicted_aqi": 0.11548851430416107,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71548843383789,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T00:00:00+00:00",
+      "predicted_aqi": 0.1133912056684494,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71339225769043,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T01:00:00+00:00",
+      "predicted_aqi": 0.11615248024463654,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71615219116211,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T02:00:00+00:00",
+      "predicted_aqi": 0.11037562042474747,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.710376739501953,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T03:00:00+00:00",
+      "predicted_aqi": 0.1112566739320755,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.711257934570312,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T04:00:00+00:00",
+      "predicted_aqi": 0.1117086410522461,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.711708068847656,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T05:00:00+00:00",
+      "predicted_aqi": 0.10703285783529282,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.707033157348633,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T06:00:00+00:00",
+      "predicted_aqi": 0.10702194273471832,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.707021713256836,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T07:00:00+00:00",
+      "predicted_aqi": 0.10748735815286636,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.707487106323242,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T08:00:00+00:00",
+      "predicted_aqi": 0.10799309611320496,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.707992553710938,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T09:00:00+00:00",
+      "predicted_aqi": 0.11076617985963821,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.710765838623047,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T10:00:00+00:00",
+      "predicted_aqi": 0.11243079602718353,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.712430953979492,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T11:00:00+00:00",
+      "predicted_aqi": 0.11459196358919144,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71459197998047,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T12:00:00+00:00",
+      "predicted_aqi": 0.11078155040740967,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71078109741211,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T13:00:00+00:00",
+      "predicted_aqi": 0.1141379326581955,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.71413803100586,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T14:00:00+00:00",
+      "predicted_aqi": 0.10772794485092163,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.707727432250977,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T15:00:00+00:00",
+      "predicted_aqi": 0.10480916500091553,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.704809188842773,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T16:00:00+00:00",
+      "predicted_aqi": 0.10863931477069855,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.70863914489746,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T17:00:00+00:00",
+      "predicted_aqi": 0.11012635380029678,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.710126876831055,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T18:00:00+00:00",
+      "predicted_aqi": 0.10635487735271454,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.706356048583984,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T19:00:00+00:00",
+      "predicted_aqi": 0.10822461545467377,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.70822525024414,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T20:00:00+00:00",
+      "predicted_aqi": 0.11173981428146362,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.711740493774414,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T21:00:00+00:00",
+      "predicted_aqi": 0.11651114374399185,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.716510772705078,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T22:00:00+00:00",
+      "predicted_aqi": 0.10980971157550812,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.709810256958008,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-17T23:00:00+00:00",
+      "predicted_aqi": 0.10404327511787415,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.704044342041016,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T00:00:00+00:00",
+      "predicted_aqi": 0.10553892701864243,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.70553970336914,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T01:00:00+00:00",
+      "predicted_aqi": 0.09786231070756912,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.69786262512207,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T02:00:00+00:00",
+      "predicted_aqi": 0.09386296570301056,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.693862915039062,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T03:00:00+00:00",
+      "predicted_aqi": 0.09628289937973022,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.6962833404541,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T04:00:00+00:00",
+      "predicted_aqi": 0.09194489568471909,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.691946029663086,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T05:00:00+00:00",
+      "predicted_aqi": 0.1025901660323143,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.702590942382812,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T06:00:00+00:00",
+      "predicted_aqi": 0.10216550529003143,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.702165603637695,
+      "predicted_category": "Good"
+    },
+    {
+      "datetime": "2024-01-18T07:00:00+00:00",
+      "predicted_aqi": 0.11120933294296265,
+      "confidence_interval_lower": 0.0,
+      "confidence_interval_upper": 19.711210250854492,
+      "predicted_category": "Good"
+    }
+  ]
+}
