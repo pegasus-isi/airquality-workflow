@@ -11,6 +11,74 @@ The AQI forecasting workflow extends the base air quality analysis with machine 
 - **Generates forecasts**: 24-hour (configurable) AQI predictions with confidence intervals
 - **Visualizes results**: Plots showing historical data, forecasts, and confidence bounds
 
+## Data Source
+
+This workflow uses the [OpenAQ API v3](https://docs.openaq.org/) to fetch air quality measurements from monitoring stations worldwide.
+
+### API Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `https://api.openaq.org/v3/locations` | Search for monitoring locations |
+| `https://api.openaq.org/v3/locations/{id}` | Get location details |
+| `https://api.openaq.org/v3/locations/{id}/sensors` | Get sensors at a location |
+| `https://api.openaq.org/v3/sensors/{id}/days` | Fetch daily aggregated measurements |
+
+### Parameters Fetched
+
+The `fetch_openaq_catalog.py` script retrieves the following pollutant measurements:
+
+| Parameter | Description | OpenAQ ID | Typical Unit |
+|-----------|-------------|-----------|--------------|
+| `pm25` | Fine particulate matter (≤2.5 μm) | 2 | µg/m³ |
+| `pm10` | Coarse particulate matter (≤10 μm) | 1 | µg/m³ |
+| `o3` | Ozone | 5 | µg/m³ or ppm |
+| `no2` | Nitrogen Dioxide | 3 | µg/m³ or ppm |
+| `so2` | Sulfur Dioxide | 4 | µg/m³ or ppm |
+| `co` | Carbon Monoxide | 7 | µg/m³ or ppm |
+
+### Data Characteristics
+
+- **Source**: Global network of air quality monitoring stations
+- **Temporal Resolution**: Daily aggregates (min, max, median, mean, std)
+- **Coverage**: Historical data from stations worldwide
+- **API Key**: Required - register at https://explore.openaq.org/register
+
+For more details, see the [OpenAQ API documentation](https://docs.openaq.org/).
+
+### Customizing Parameters
+
+To change or add parameters, modify the `fetch_openaq_catalog.py` script:
+
+1. **Edit the default parameters list** in the `fetch_openaq_catalog()` function (around line 117):
+
+```python
+if parameters is None:
+    parameters = ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co']
+```
+
+2. **Update the parameter map** if adding new parameters (around line 120):
+
+```python
+parameter_map = {
+    'pm25': 2,    # PM2.5
+    'pm10': 1,    # PM10
+    'o3': 5,      # Ozone
+    'no2': 3,     # Nitrogen Dioxide
+    'so2': 4,     # Sulfur Dioxide
+    'co': 7       # Carbon Monoxide
+    # Add new parameters here with their OpenAQ IDs
+}
+```
+
+3. **Or use command-line arguments** to select specific parameters:
+
+```bash
+./fetch_openaq_catalog.py --location-ids 2178 --parameters pm25 pm10 o3 --start-date 2024-01-01
+```
+
+**Finding OpenAQ Parameter IDs**: Use the OpenAQ Explorer (https://explore.openaq.org/) or API to discover available parameters and their IDs for specific locations.
+
 ## Architecture
 
 ### Workflow Structure
