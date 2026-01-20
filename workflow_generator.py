@@ -48,20 +48,32 @@ class AirQualityForecastWorkflow:
         start_date,
         end_date,
         parameters,
+        data_source="openaq",
+        sage_input=None,
+        sage_vsn=None,
+        sage_plugin=None,
+        sage_names=None,
         historical_days=90,
         forecast_horizon=24,
+        skip_forecast=False,
         dagfile="workflow_forecast.yml"
     ):
         self.dagfile = dagfile
         self.wf_dir = str(Path(__file__).parent.resolve())
         self.shared_scratch_dir = os.path.join(self.wf_dir, "scratch")
         self.local_storage_dir = os.path.join(self.wf_dir, "output")
-        self.location_ids = location_ids
+        self.location_ids = location_ids or []
         self.parameters = parameters if parameters else ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co']
         self.start_date = start_date
         self.end_date = end_date
+        self.data_source = data_source
+        self.sage_input = sage_input
+        self.sage_vsn = sage_vsn
+        self.sage_plugin = sage_plugin
+        self.sage_names = sage_names
         self.historical_days = historical_days
         self.forecast_horizon = forecast_horizon
+        self.skip_forecast = skip_forecast
         self.historical_start_date = start_date - timedelta(days=historical_days)
 
     def write(self):
@@ -224,13 +236,130 @@ class AirQualityForecastWorkflow:
         self.openaq_catalog = df
         return True
 
+    def load_sage_catalog(self):
+        """Load SAGE data via JSONL file or sage_data_client and convert to catalog CSV."""
+        def map_name_to_parameter(name: str):
+            if name in ("env.air_quality.conc", "env.pm25"):
+                return "pm25"
+            if name in ("env.pm10",):
+                return "pm10"
+            return None
+
+        rows = []
+
+        if self.sage_input:
+            input_path = Path(self.sage_input)
+            if not input_path.exists():
+                print(f"Error: SAGE input file not found: {input_path}")
+                return False
+
+            import json
+            with open(input_path, "r") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    meta = record.get("meta", {})
+                    if self.sage_vsn and meta.get("vsn") != self.sage_vsn:
+                        continue
+                    if self.sage_plugin and meta.get("plugin") != self.sage_plugin:
+                        continue
+
+                    name = record.get("name")
+                    if self.sage_names and name not in self.sage_names:
+                        continue
+
+                    parameter = map_name_to_parameter(name)
+                    if not parameter:
+                        continue
+
+                    location = meta.get("vsn") or meta.get("node") or "unknown"
+                    rows.append({
+                        "location": location,
+                        "location_id": location,
+                        "parameter": parameter,
+                        "value": record.get("value"),
+                        "unit": record.get("unit", "unknown"),
+                        "datetime": record.get("timestamp"),
+                    })
+        else:
+            try:
+                import sage_data_client
+            except ImportError:
+                print("Error: sage_data_client is not available. Install it or use --sage-input.")
+                return False
+
+            start = self.start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+            end = self.end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+            filter_dict = {}
+            if self.sage_plugin:
+                filter_dict["plugin"] = self.sage_plugin
+            if self.sage_vsn:
+                filter_dict["vsn"] = self.sage_vsn
+            if self.sage_names and len(self.sage_names) == 1:
+                filter_dict["name"] = self.sage_names[0]
+
+            df = sage_data_client.query(start=start, end=end, filter=filter_dict)
+            if df is None or df.empty:
+                print("No SAGE measurements returned for the specified filters.")
+                return False
+
+            if self.sage_names and len(self.sage_names) > 1:
+                df = df[df["name"].isin(self.sage_names)]
+
+            for _, record in df.iterrows():
+                name = record.get("name")
+                parameter = map_name_to_parameter(name)
+                if not parameter:
+                    continue
+
+                location = record.get("meta.vsn") or record.get("meta.node") or "unknown"
+                rows.append({
+                    "location": location,
+                    "location_id": location,
+                    "parameter": parameter,
+                    "value": record.get("value"),
+                    "unit": record.get("unit", "unknown"),
+                    "datetime": record.get("timestamp"),
+                })
+
+        if not rows:
+            print("No SAGE measurements matched the provided filters.")
+            return False
+
+        import pandas as pd
+        df = pd.DataFrame(rows)
+        df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce", utc=True)
+        df = df.dropna(subset=["datetime"])
+        if df.empty:
+            print("No valid SAGE measurements after date parsing.")
+            return False
+
+        df["timestamp"] = df["datetime"].astype(int) // 10**9
+        df["hour_bucket"] = df["datetime"].dt.floor("h")
+
+        output_path = os.path.join(self.wf_dir, self.openaq_cache_file)
+        df.to_csv(output_path, index=False)
+        self.openaq_catalog = df
+        return True
+
     def create_replica_catalog(self):
         self.rc = ReplicaCatalog()
 
         if self.openaq_catalog is None:
-            if not self.fetch_openaq_catalog():
-                print("Failed to fetch OpenAQ data")
-                sys.exit(1)
+            if self.data_source == "sage":
+                if not self.load_sage_catalog():
+                    print("Failed to load SAGE data")
+                    sys.exit(1)
+            else:
+                if not self.fetch_openaq_catalog():
+                    print("Failed to fetch OpenAQ data")
+                    sys.exit(1)
 
         self.rc.add_replica(
             "local",
@@ -247,21 +376,32 @@ class AirQualityForecastWorkflow:
             print("Error: No catalog data available. Run fetch_openaq_catalog first.")
             return
 
-        # Get unique location names for each location ID
+        # Get unique location names for each location ID (OpenAQ) or from SAGE data
         location_map = {}
-        for loc_id in self.location_ids:
-            loc_data = self.openaq_catalog[self.openaq_catalog['location_id'] == loc_id]
-            if not loc_data.empty:
-                loc_name = loc_data['location'].iloc[0]
+        if self.data_source == "sage":
+            for loc_name in sorted(self.openaq_catalog["location"].unique()):
                 safe_name = loc_name.replace(' ', '_').replace('-', '_').replace('/', '_')
-                location_map[loc_id] = {
-                    'name': safe_name,
-                    'display_name': loc_name
+                location_map[loc_name] = {
+                    "name": safe_name,
+                    "display_name": loc_name
                 }
+        else:
+            for loc_id in self.location_ids:
+                loc_data = self.openaq_catalog[self.openaq_catalog['location_id'] == loc_id]
+                if not loc_data.empty:
+                    loc_name = loc_data['location'].iloc[0]
+                    safe_name = loc_name.replace(' ', '_').replace('-', '_').replace('/', '_')
+                    location_map[loc_id] = {
+                        'name': safe_name,
+                        'display_name': loc_name
+                    }
 
-        print(f"\nCreating forecast workflow for {len(location_map)} location(s)")
-        print(f"Historical data period: {self.historical_days} days")
-        print(f"Forecast horizon: {self.forecast_horizon} hours\n")
+        print(f"\nCreating workflow for {len(location_map)} location(s)")
+        if not self.skip_forecast:
+            print(f"Historical data period: {self.historical_days} days")
+            print(f"Forecast horizon: {self.forecast_horizon} hours\n")
+        else:
+            print("Forecast pipeline: skipped\n")
 
         anomaly_files = []
 
@@ -269,7 +409,10 @@ class AirQualityForecastWorkflow:
             location = loc_info['name']
             display_name = loc_info['display_name']
 
-            print(f"  Processing location: {display_name} (ID: {loc_id})")
+            if self.data_source == "sage":
+                print(f"  Processing location: {display_name}")
+            else:
+                print(f"  Processing location: {display_name} (ID: {loc_id})")
 
             # Create directories
             mkdir_job = (
@@ -350,6 +493,8 @@ class AirQualityForecastWorkflow:
             self.wf.add_jobs(anomaly_job)
 
             # ===== FORECAST PIPELINE =====
+            if self.skip_forecast:
+                continue
 
             # Fetch historical data (90 days)
             historical_file = File(f"historical/{location}/{location}_historical.csv")
@@ -494,7 +639,8 @@ class AirQualityForecastWorkflow:
 
         print("\nWorkflow created successfully!")
         print(f"  Base pipeline: extract → analyze → anomaly detection")
-        print(f"  Forecast pipeline: fetch historical → prepare features → train LSTM → forecast → visualize")
+        if not self.skip_forecast:
+            print("  Forecast pipeline: fetch historical → prepare features → train LSTM → forecast → visualize")
 
 
 if __name__ == "__main__":
@@ -526,9 +672,9 @@ if __name__ == "__main__":
         "--location-ids",
         metavar="INT",
         type=int,
-        required=True,
+        required=False,
         nargs="+",
-        help="Location IDs to analyze (use fetch_openaq_catalog.py --search to find IDs)",
+        help="OpenAQ location IDs (use fetch_openaq_catalog.py --search to find IDs)",
     )
     parser.add_argument(
         "--start-date",
@@ -567,6 +713,42 @@ if __name__ == "__main__":
         default=24,
         help="Forecast horizon in hours (default: 24)",
     )
+    parser.add_argument(
+        "--data-source",
+        choices=["openaq", "sage"],
+        default="openaq",
+        help="Data source (default: openaq)",
+    )
+    parser.add_argument(
+        "--sage-input",
+        type=str,
+        default=None,
+        help="Path to SAGE JSONL data file (required when data-source is sage)",
+    )
+    parser.add_argument(
+        "--sage-vsn",
+        type=str,
+        default=None,
+        help="Filter SAGE data by VSN (optional)",
+    )
+    parser.add_argument(
+        "--sage-plugin",
+        type=str,
+        default=None,
+        help="Filter SAGE data by plugin (optional)",
+    )
+    parser.add_argument(
+        "--sage-names",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Filter SAGE data by measurement names (optional)",
+    )
+    parser.add_argument(
+        "--skip-forecast",
+        action="store_true",
+        help="Skip LSTM forecast pipeline",
+    )
 
     args = parser.parse_args()
 
@@ -576,7 +758,11 @@ if __name__ == "__main__":
     print("=" * 70)
     print("AIR QUALITY FORECAST WORKFLOW GENERATOR")
     print("=" * 70)
-    print(f"Location IDs: {args.location_ids}")
+    print(f"Data source: {args.data_source}")
+    if args.data_source == "openaq":
+        print(f"Location IDs: {args.location_ids}")
+    else:
+        print(f"SAGE input: {args.sage_input}")
     print(f"Analysis period: {args.start_date.date()} to {args.end_date.date()}")
     print(f"Historical training data: {args.historical_days} days")
     print(f"Forecast horizon: {args.forecast_horizon} hours")
@@ -584,13 +770,30 @@ if __name__ == "__main__":
     print("=" * 70)
 
     try:
+        if args.data_source == "openaq" and not args.location_ids:
+            raise ValueError("--location-ids is required when data-source is openaq")
+        if args.data_source == "sage" and not args.sage_input:
+            try:
+                import sage_data_client  # noqa: F401
+            except ImportError:
+                raise ValueError("--sage-input is required when data-source is sage unless sage_data_client is installed")
+        if args.data_source == "sage" and not args.skip_forecast:
+            print("Warning: SAGE data does not include OpenAQ history. Skipping forecast pipeline.")
+            args.skip_forecast = True
+
         workflow = AirQualityForecastWorkflow(
             location_ids=args.location_ids,
             start_date=args.start_date,
             end_date=args.end_date,
             parameters=args.parameters,
+            data_source=args.data_source,
+            sage_input=args.sage_input,
+            sage_vsn=args.sage_vsn,
+            sage_plugin=args.sage_plugin,
+            sage_names=args.sage_names,
             historical_days=args.historical_days,
             forecast_horizon=args.forecast_horizon,
+            skip_forecast=args.skip_forecast,
             dagfile=args.output
         )
 
