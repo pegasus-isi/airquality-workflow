@@ -13,14 +13,17 @@ scipy>=1.9.0
 # HTTP requests
 requests>=2.28.0
 
+# SAGE data access
+sage-data-client>=0.7.0
+
 # Timezone handling
 pytz>=2022.1
 
 # Machine learning
-torch>=1.9.0
+torch
 scikit-learn>=1.0.0
 tqdm>=4.62.0
 
 # Workflow management (for local workflow generation)
 # Note: Pegasus WMS should be installed on the submit node
-# pegasus-wms>=5.0.0
+pegasus-wms>=5.0.0

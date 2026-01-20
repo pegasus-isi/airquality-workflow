@@ -1,6 +1,6 @@
 # AQI Forecasting Workflow
 
-A Pegasus workflow system for processing air quality sensor data from OpenAQ to detect anomalies and analyze pollutant trends. It also has LSTM-based AQI forecasting capabilities, enabling prediction of air quality for the next 24 hours based on historical patterns.
+A Pegasus workflow system for processing air quality sensor data from OpenAQ/Sage to detect anomalies and analyze pollutant trends. It also has LSTM-based AQI forecasting capabilities, enabling prediction of air quality for the next 24 hours based on historical patterns for OpenAQ data.
 
 ## Overview
 
@@ -11,9 +11,16 @@ The AQI forecasting workflow extends the base air quality analysis with machine 
 - **Generates forecasts**: 24-hour (configurable) AQI predictions with confidence intervals
 - **Visualizes results**: Plots showing historical data, forecasts, and confidence bounds
 
-## Data Source
+## Data Sources
 
-This workflow uses the [OpenAQ API v3](https://docs.openaq.org/) to fetch air quality measurements from monitoring stations worldwide.
+This workflow supports two data sources:
+
+- **OpenAQ API v3**: Global air quality monitoring stations (default).
+- **SAGE Continuum**: Edge sensor data via `sage_data_client` or local JSONL exports.
+
+### OpenAQ API v3
+
+The workflow uses the [OpenAQ API v3](https://docs.openaq.org/) to fetch air quality measurements from monitoring stations worldwide.
 
 ### API Endpoints
 
@@ -78,6 +85,40 @@ parameter_map = {
 ```
 
 **Finding OpenAQ Parameter IDs**: Use the OpenAQ Explorer (https://explore.openaq.org/) or API to discover available parameters and their IDs for specific locations.
+
+### SAGE Continuum
+
+SAGE data can be fetched directly using `sage_data_client` (recommended) or via a local JSONL file downloaded with `curl`. For details on the platform, see https://sagecontinuum.org/.
+
+**Direct query (recommended):**
+
+```bash
+./workflow_generator.py \
+    --data-source sage \
+    --sage-vsn W045 \
+    --sage-plugin registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0 \
+    --sage-names env.air_quality.conc \
+    --start-date 2026-01-14 \
+    --end-date 2026-01-15 \
+    --output workflow_forecast.yml
+```
+
+**JSONL input (offline):**
+
+```bash
+./workflow_generator.py \
+    --data-source sage \
+    --sage-input sage/input_data.json \
+    --sage-vsn W045 \
+    --sage-plugin registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0 \
+    --start-date 2026-01-14 \
+    --end-date 2026-01-15 \
+    --output workflow_forecast.yml
+```
+
+Notes:
+- SAGE runs the base pipeline (extract → analyze → anomaly detection) and skips the forecast pipeline by default.
+- Use `--sage-names` to filter sensor streams (e.g., `env.air_quality.conc`, `env.pm10`).
 
 ## Architecture
 
@@ -162,7 +203,7 @@ docker build -f AirQuality_Forecast_Dockerfile -t kthare10/airquality-forecast:l
 docker push kthare10/airquality-forecast:latest  # If using with Pegasus
 ```
 
-### 2. Set OpenAQ API Key
+### 2. Set OpenAQ API Key (Only needed when using OpenAQ Data Source)
 
 The workflow requires an OpenAQ API key to fetch historical data:
 
@@ -181,6 +222,16 @@ export OPENAQ_API_KEY='your-api-key-here'
     --location-ids 2178 \
     --start-date 2024-01-15 \
     --end-date 2024-01-16 \
+    --output workflow_forecast.yml
+
+# SAGE usage (live query)
+./workflow_generator.py \
+    --data-source sage \
+    --sage-vsn W045 \
+    --sage-plugin registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0 \
+    --sage-names env.air_quality.conc \
+    --start-date 2026-01-14 \
+    --end-date 2026-01-15 \
     --output workflow_forecast.yml
 
 # Advanced options
@@ -213,7 +264,7 @@ pegasus-analyzer /path/to/submit/directory
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--location-ids` | int+ | **Required** | OpenAQ location IDs to analyze |
+| `--location-ids` | int+ | Required for OpenAQ | OpenAQ location IDs to analyze |
 | `--start-date` | YYYY-MM-DD | **Required** | Analysis start date |
 | `--end-date` | YYYY-MM-DD | start_date + 1 day | Analysis end date |
 | `--historical-days` | int | 90 | Days of historical data for training |
@@ -221,6 +272,12 @@ pegasus-analyzer /path/to/submit/directory
 | `--parameters` | str+ | All 6 | Pollutants: pm25, pm10, o3, no2, so2, co |
 | `--execution-site` | str | condorpool | HTCondor execution site |
 | `-o, --output` | str | workflow_forecast.yml | Output YAML file |
+| `--data-source` | str | openaq | Data source: openaq or sage |
+| `--sage-input` | str | none | Path to SAGE JSONL file (offline mode) |
+| `--sage-vsn` | str | none | Filter SAGE data by VSN |
+| `--sage-plugin` | str | none | Filter SAGE data by plugin |
+| `--sage-names` | str+ | none | Filter SAGE data by measurement names |
+| `--skip-forecast` | flag | false | Skip LSTM forecast pipeline |
 
 ## LSTM Model Architecture
 

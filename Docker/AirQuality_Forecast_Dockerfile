@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir \
     matplotlib \
     scipy \
     requests \
-    pytz
+    pytz \
+    sage-data-client
 
 # ML dependencies for forecasting
 RUN pip install --no-cache-dir \
