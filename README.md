@@ -88,7 +88,7 @@ parameter_map = {
 
 ### SAGE Continuum
 
-SAGE data can be fetched directly using `sage_data_client` (recommended) or via a local JSONL file downloaded with `curl`.
+SAGE data can be fetched directly using `sage_data_client` (recommended) or via a local JSONL file downloaded with `curl`. For details on the platform, see https://sagecontinuum.org/.
 
 **Direct query (recommended):**
 
