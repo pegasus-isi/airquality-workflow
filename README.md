@@ -1,6 +1,6 @@
 # AQI Forecasting Workflow
 
-A Pegasus workflow system for processing air quality sensor data from OpenAQ to detect anomalies and analyze pollutant trends. It also has LSTM-based AQI forecasting capabilities, enabling prediction of air quality for the next 24 hours based on historical patterns.
+A Pegasus workflow system for processing air quality sensor data from OpenAQ/Sage to detect anomalies and analyze pollutant trends. It also has LSTM-based AQI forecasting capabilities, enabling prediction of air quality for the next 24 hours based on historical patterns for OpenAQ data.
 
 ## Overview
 
