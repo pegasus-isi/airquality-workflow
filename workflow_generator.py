@@ -118,7 +118,7 @@ class AirQualityForecastWorkflow:
         airquality_container = Container(
             "airquality_container",
             container_type=Container.SINGULARITY,
-            image="docker://kthare10/airquality-processing:latest",
+            image="docker://kthare10/airquality-forecast:latest",
             image_site="docker_hub",
         )
 
