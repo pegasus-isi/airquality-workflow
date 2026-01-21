@@ -446,6 +446,19 @@ cat output/models/<location>/<location>_training_info.json
 - EPA AQI Standards: https://www.airnow.gov/aqi/aqi-basics/
 - Sage: https://sagecontinuum.org/
 
+## Citation
+
+If you use this workflow in your research, please cite:
+
+```
+@misc{airquality-workflow,
+  title={Air Quality Forecasting Workflow using Pegasus WMS},
+  year={2025},
+  publisher={GitHub},
+  url={https://github.com/pegasus-isi/airquality-workflow}
+}
+```
+
 ## Support
 
 For issues or questions:
