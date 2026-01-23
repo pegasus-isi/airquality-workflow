@@ -408,7 +408,7 @@ This workflow was developed collaboratively with Claude. Below are the key promp
 **Feature Development:**
 - "Suggest ML ideas for the Air Quality Workflow."
 - "Add LSTM-based prediction to the workflow. Can we visualize these predictions?"
-- "The workflow currently fetches data from OpenAQ. Can you add support to fetch data from SAGE Continuum?"
+- "The workflow currently fetches data from OpenAQ. Can you add support to fetch data from SAGE Continuum: https://portal.sagecontinuum.org/? API: https://sagecontinuum.org/docs/tutorials/accessing-data#using-sage-data-client"
 
 **Debugging and Fixes:**
 - "Workflow failed with: Job `fetch_historical_fetch_hist_Del_Norte` errors: `Transfer output files failure...` Can you help me fix this?"
