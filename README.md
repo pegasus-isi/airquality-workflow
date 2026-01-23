@@ -398,6 +398,23 @@ The forecast visualization includes:
 5. **Separation Line**: Vertical line marking forecast start
 6. **Legend**: Model info and horizon
 
+## AI Interactions
+
+This workflow was developed collaboratively with Claude. Below are the key prompts used during development.
+
+**Initial Setup:**
+- "Can you help me create an air quality workflow similar to the Orcasound workflow, using https://openaq.org/ as the data source?"
+
+**Feature Development:**
+- "Suggest ML ideas for the Air Quality Workflow."
+- "Add LSTM-based prediction to the workflow. Can we visualize these predictions?"
+- "The workflow currently fetches data from OpenAQ. Can you add support to fetch data from SAGE Continuum?"
+
+**Debugging and Fixes:**
+- "Workflow failed with: Job `fetch_historical_fetch_hist_Del_Norte` errors: `Transfer output files failure...` Can you help me fix this?"
+- "Fetch tasks are failing with error: `Failed to fetch historical data: OpenAQ API key not found.` Can you help?"
+- "Prepare task fails with error: `Could not convert pm25 to numeric.` Can you help?"
+
 ## Troubleshooting
 
 ### Common Issues
