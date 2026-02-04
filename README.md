@@ -138,7 +138,7 @@ Forecast Pipeline:
 
 The following diagram shows the workflow DAG for a single location:
 
-![Air Quality Workflow DAG](output/air-workflow-single.png)
+![Air Quality Workflow DAG](images/air-workflow-single.png)
 
 ### Components
 
@@ -150,42 +150,43 @@ The following diagram shows the workflow DAG for a single location:
 | `generate_forecast.py` | Generate 24-hour predictions | 2 GB | Forecast |
 | `visualize_forecast.py` | Create forecast visualizations | 2 GB | Forecast |
 
-## Prerequisites
+## Running on ACCESS
 
-### Pegasus/HTCondor Cluster
+The easiest way to run this workflow is using the provided Jupyter notebook on an ACCESS resource with Pegasus and HTCondor pre-configured:
 
-Before running this workflow, you need a Pegasus/HTCondor cluster. This cluster can be deployed on any infrastructure that supports HTCondor and Pegasus WMS, including cloud providers (AWS, GCP, Azure), on-premises clusters, or research testbeds.
+**Notebook**: [`Access-Airquality-workflow.ipynb`](Access-Airquality-workflow.ipynb)
 
-Below we provide an example of how to deploy the cluster on the [FABRIC testbed](https://fabric-testbed.net/):
+The notebook walks through the complete workflow: configuring parameters, generating the Pegasus DAG, submitting to HTCondor, monitoring execution, and examining results with inline visualizations.
 
-#### Option 1: FABRIC Artifact (Recommended)
+## Running on FABRIC
 
-Download and run the pre-configured Pegasus-FABRIC notebook from the FABRIC Artifacts repository:
+The workflow can also be run on the [FABRIC testbed](https://fabric-testbed.net/) by deploying a distributed Pegasus/HTCondor cluster across FABRIC sites.
 
-**Artifact URL**: https://artifacts.fabric-testbed.net/artifacts/53da4088-a175-4f0c-9e25-a4a371032a39
+### Deploy a Pegasus/HTCondor Cluster
 
-This artifact contains a complete setup for deploying a distributed Pegasus/HTCondor infrastructure across FABRIC sites.
+You can provision a cluster using either of the following notebooks:
 
-#### Option 2: Jupyter Examples Repository
+| Option | Link | Description |
+|--------|------|-------------|
+| FABRIC Artifact (Recommended) | [Pegasus-FABRIC Artifact](https://artifacts.fabric-testbed.net/artifacts/53da4088-a175-4f0c-9e25-a4a371032a39) | Pre-configured notebook from the FABRIC Artifacts repository |
+| Jupyter Examples | [pegasus-fabric.ipynb](https://github.com/fabric-testbed/jupyter-examples/blob/f7be0c75f22544c72d7b3e3fa42bbdfd9d8bb841/fabric_examples/complex_recipes/pegasus/pegasus-fabric.ipynb) | Notebook from the official FABRIC Jupyter examples |
 
-Use the Pegasus-FABRIC notebook from the official FABRIC Jupyter examples:
+Both notebooks provision the following cluster architecture:
 
-**GitHub**: https://github.com/fabric-testbed/jupyter-examples/blob/f7be0c75f22544c72d7b3e3fa42bbdfd9d8bb841/fabric_examples/complex_recipes/pegasus/pegasus-fabric.ipynb
+- **Submit Node** -- Central Manager running HTCondor scheduler and Pegasus WMS
+- **Worker Nodes** -- Distributed execution points across multiple FABRIC sites
+- **FABNetv4 Networking** -- Private L3 network connecting all nodes
 
-#### Cluster Architecture
-
-The notebook provisions:
-- **Submit Node**: Central Manager running HTCondor scheduler and Pegasus WMS
-- **Worker Nodes**: Distributed execution points across multiple FABRIC sites
-- **FABNetv4 Networking**: Private L3 network connecting all nodes
-
-#### Setup Steps
+### Setup Steps
 
 1. Log into the [FABRIC JupyterHub](https://jupyter.fabric-testbed.net/)
-2. Upload/clone the Pegasus-FABRIC notebook
+2. Upload or clone one of the Pegasus-FABRIC notebooks above
 3. Configure your desired sites and node specifications
 4. Run the notebook to provision the cluster
-5. SSH to the submit node to run workflows
+5. Clone this repository on the submit node
+6. Run the workflow using the CLI or the [Access notebook](Access-Airquality-workflow.ipynb)
+
+## Prerequisites
 
 ### Python Dependencies
 
