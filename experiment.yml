@@ -1,0 +1,145 @@
+# -------------------------------------------------------------------------
+# Kiso experiment configuration for the Air Quality Forecast Workflow
+# on the FABRIC testbed.
+#
+# Prerequisites:
+#   pip install kiso[fabric]
+#
+# Required secrets (create the secrets/ directory before running):
+#   secrets/fabric_rc.py     - FABRIC API credentials (download from portal)
+#   secrets/openaq_api_key   - OpenAQ API key (one line, no newline)
+#                              Register free at https://explore.openaq.org/register
+#
+# Usage:
+#   kiso check experiment.yml          # Validate configuration
+#   kiso up experiment.yml             # Provision FABRIC resources
+#   kiso run experiment.yml            # Generate and run the workflow
+#   kiso down experiment.yml           # Destroy provisioned resources
+# -------------------------------------------------------------------------
+
+name: airquality-workflow
+
+# ---------------------------------------------------------------------------
+# HTCondor pool layout:
+#   - central-manager + submit on the same node (head node)
+#   - execute nodes form the condorpool execution site
+# ---------------------------------------------------------------------------
+deployment:
+  htcondor:
+    - kind: central-manager
+      labels:
+        - central-manager
+    - kind: submit
+      labels:
+        - submit
+    - kind: execute
+      labels:
+        - execute
+
+# ---------------------------------------------------------------------------
+# Apptainer is installed on execute nodes so HTCondor jobs can run
+# the kthare10/airquality-forecast:latest container image via
+# docker:// URI (Singularity/Apptainer pull).
+# ---------------------------------------------------------------------------
+software:
+  apptainer:
+    labels:
+      - execute
+
+# ---------------------------------------------------------------------------
+# FABRIC site resources
+#
+# Nodes:
+#   head   (central-manager + submit): large  — 4 cores, 4 GB RAM
+#   worker (execute × 2):              extra-large — 6 cores, 6 GB RAM
+#          extra-large gives headroom for the 4 GB LSTM training job.
+#
+# Networks:
+#   FABNetv4     — internal cluster network (HTCondor, file transfers)
+#   FABNetv4Ext  — external internet access required by:
+#                    * submit node: fetch OpenAQ catalog during wf generation
+#                    * execute nodes: fetch_historical_data jobs call OpenAQ API
+#                  Requires Net.FABNetv4Ext permission on your FABRIC project.
+# ---------------------------------------------------------------------------
+sites:
+  - kind: fabric
+    rc_file: secrets/fabric_rc
+    walltime: "08:00:00"
+    site: UCSD
+    image: default_rocky_8
+    name_prefix: airquality-workflow
+    resources:
+      machines:
+        - labels:
+            - central-manager
+            - submit
+          flavour_desc:
+            core: 1
+            mem: 4
+            disk: 30
+          number: 1
+
+        - labels:
+            - execute
+          flavour_desc:
+            core: 1
+            mem: 6
+            disk: 30
+          number: 2
+
+      networks:
+        - labels:
+            - internal-network
+          kind: FABNetv4
+          site: UCSD
+          nic:
+            kind: SharedNIC
+            model: ConnectX-6
+
+# ---------------------------------------------------------------------------
+# Pegasus workflow experiment
+#
+# The run_workflow.sh script:
+#   1. Exports OPENAQ_API_KEY from the uploaded secrets file
+#   2. Runs workflow_generator.py to generate the Pegasus YAML DAG
+#   3. Calls pegasus-plan --submit to submit to the local condorpool
+#
+# Customize the --location-ids and --start-date args below.
+# Use ./fetch_openaq_catalog.py --search --city "CityName" to find IDs.
+# ---------------------------------------------------------------------------
+experiments:
+  - kind: pegasus
+    name: airquality-workflow
+    description: >
+      Air quality forecasting workflow: fetches OpenAQ sensor data, runs
+      EPA AQI analysis and anomaly detection, trains an LSTM model, and
+      generates 24-hour AQI forecasts with visualizations.
+    main: |
+      ./run_workflow.sh \
+        --location-ids \
+        2178 \
+        --start-date \
+        2024-01-15
+    submit_node_labels:
+      - submit
+    poll_interval: 60
+    timeout: 14400        # 4 hours — LSTM training on 90 days data can be slow
+
+    # --- Setup scripts run on the submit node before main -----------------
+    setup:
+      - labels:
+          - submit
+        script: |
+          set -e
+          sudo pip3 install --quiet pegasus-wms requests pandas numpy scikit-learn
+          chmod +x ~kiso/airquality-workflow/workflow_generator.py
+          chmod +x ~kiso/airquality-workflow/fetch_openaq_catalog.py
+          chmod +x ~kiso/airquality-workflow/bin/*.py
+          chmod +x ~kiso/airquality-workflow/run_workflow.sh
+
+    # --- Output files fetched back to the local machine after completion ---
+    outputs:
+      - labels:
+          - submit
+        src: ~kiso/airquality-workflow/output/
+        dst: ./output/
