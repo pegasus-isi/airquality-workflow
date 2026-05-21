@@ -66,7 +66,7 @@ sites:
     rc_file: secrets/fabric_rc
     walltime: "08:00:00"
     site: UCSD
-    image: default_rocky_8
+    image: default_rocky_9
     name_prefix: airquality-workflow
     resources:
       machines:
