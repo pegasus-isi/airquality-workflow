@@ -1,0 +1,113 @@
+# -------------------------------------------------------------------------
+#
+# Kiso experiment configuration for Air Quality Forecasting Workflow on FABRIC.
+#
+# Derived from the Pegasus-FABRIC deployment notebook:
+#   ../claude-jh/pegasus/pegasus-fabric.ipynb
+#
+# Install Kiso and its dependencies,
+#   pip install kiso[fabric]
+# Check the experiment configuration.
+#   kiso check kiso-airquality-experiment.yml
+# Set up the experiment.
+#   kiso up kiso-airquality-experiment.yml
+# Run the experiment.
+#   kiso run kiso-airquality-experiment.yml
+# Destroy the experiment.
+#   kiso down kiso-airquality-experiment.yml
+#
+# -------------------------------------------------------------------------
+name: airquality-experiment
+
+variables:
+  location_ids: "2178"
+  start_date: "2024-01-15"
+  end_date: "2024-01-16"
+  historical_days: "90"
+  forecast_horizon: "24"
+
+sites:
+  - kind: fabric
+    rc_file: /Users/kthare10/work/fabric_config/fabric_rc
+    walltime: "24:00:00"
+    image: default_ubuntu_24
+    resources:
+      machines:
+        - labels:
+            - submit-node
+          site: SALT
+          flavour_desc:
+            core: 16
+            mem: 32
+            disk: 500
+          number: 1
+        - labels:
+            - worker-node
+          site: SALT 
+          flavour_desc:
+            core: 24
+            mem: 48
+            disk: 500
+          number: 2
+      networks:
+        - labels:
+            - experiment-net
+          kind: FABNetv4
+          site: SALT
+          nic:
+            kind: SharedNIC
+            model: ConnectX-6
+
+deployment:
+  htcondor:
+    - kind: central-manager
+      labels:
+        - submit-node
+    - kind: submit
+      labels:
+        - submit-node
+    - kind: execute
+      labels:
+        - worker-node
+
+software:
+  docker:
+    labels:
+      - submit-node
+      - worker-node
+  apptainer:
+    labels:
+      - submit-node
+      - worker-node
+
+experiments:
+  - kind: pegasus
+    name: airquality-forecast
+    count: 1
+    main: |
+      export OPENAQ_API_KEY="$(cat secrets/openaq_api_key)"
+      cd airquality-workflow
+      ./workflow_generator.py \
+        --location-ids 2178 \
+        --start-date 2024-01-15 \
+        --end-date 2024-01-16 \
+        --historical-days 90 \
+        --forecast-horizon 24 \
+        --output workflow_forecast.yml
+      pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
+    submit_node_labels:
+      - submit-node
+    timeout: 3600
+    poll_interval: 30
+    setup:
+      - labels:
+          - submit-node
+        script: |
+          git clone https://github.com/pegasus-isi/airquality-workflow.git
+          cd airquality-workflow
+          chmod +x workflow_generator.py
+    outputs:
+      - labels:
+          - submit-node
+        src: airquality-workflow/output/
+        dst: ./output/
