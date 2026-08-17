@@ -75,7 +75,7 @@ there is no registry pull. Build spec
 The `.sif` path is overridable with `--container-sif`. A `.sif` carries **one
 architecture** — there is no multi-arch manifest — so it MUST be built on a host
 matching the worker nodes; Apptainer cannot build on macOS at all. See
-`../APPTAINER.md`. `Docker/AirQuality_Forecast_Dockerfile` is retained as a
+`APPTAINER.md`. `Docker/AirQuality_Forecast_Dockerfile` is retained as a
 fallback.
 
 ---

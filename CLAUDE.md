@@ -22,7 +22,7 @@ The container used for execution is `kthare10/airquality-forecast:latest` (Pytho
 ```bash
 # Build the Apptainer image if needed (from the workflow root). No registry push
 # — Pegasus stages the .sif like any other input file. Apptainer cannot build on
-# macOS and a .sif is single-architecture; see ../APPTAINER.md.
+# macOS and a .sif is single-architecture; see APPTAINER.md.
 apptainer build Apptainer/AirQuality_Forecast_Container.sif \
     Apptainer/AirQuality_Forecast_Container.def
 ```
