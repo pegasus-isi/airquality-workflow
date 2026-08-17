@@ -199,10 +199,19 @@ pip install -r requirements.txt
 ### 1. Build Docker Container
 
 ```bash
-cd Docker
-docker build -f AirQuality_Forecast_Dockerfile -t kthare10/airquality-forecast:latest .
-docker push kthare10/airquality-forecast:latest  # If using with Pegasus
+# Build the Apptainer image (run from the workflow root). No registry push
+# needed — Pegasus stages the .sif like any other input file.
+apptainer build Apptainer/AirQuality_Forecast_Container.sif \
+    Apptainer/AirQuality_Forecast_Container.def
+
+# Verify
+apptainer exec Apptainer/AirQuality_Forecast_Container.sif \
+    python -c "import torch, sklearn, pandas; print('ok')"
 ```
+
+Apptainer cannot build on macOS, and a `.sif` is single-architecture — build on
+a Linux host matching your worker nodes. See `../APPTAINER.md`. The legacy
+`Docker/AirQuality_Forecast_Dockerfile` is kept as a fallback.
 
 ### 2. Set OpenAQ API Key (Only needed when using OpenAQ Data Source)
 

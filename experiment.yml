@@ -37,9 +37,10 @@ deployment:
         - execute
 
 # ---------------------------------------------------------------------------
-# Apptainer is installed on execute nodes so HTCondor jobs can run
-# the kthare10/airquality-forecast:latest container image via
-# docker:// URI (Singularity/Apptainer pull).
+# Apptainer is installed on execute nodes so HTCondor jobs can run the
+# Apptainer/AirQuality_Forecast_Container.sif image. Pegasus stages that .sif
+# from the submit host (image_site="local") rather than pulling from a registry,
+# so the execute nodes need no outbound registry access and no credentials.
 # ---------------------------------------------------------------------------
 software:
   apptainer:
