@@ -92,6 +92,9 @@ SAGE data can be fetched directly using `sage_data_client` (recommended) or via 
 
 **Direct query (recommended):**
 
+> Build the container first — see [Quick Start step 1](#1-build-the-container).
+> The generator warns and the jobs fail without it.
+
 ```bash
 ./workflow_generator.py \
     --data-source sage \
@@ -196,13 +199,51 @@ pip install -r requirements.txt
 
 ## Quick Start
 
-### 1. Build Docker Container
+### 1. Build the Container
+
+Do this first — the generator in step 3 expects the `.sif` to exist.
 
 ```bash
-cd Docker
-docker build -f AirQuality_Forecast_Dockerfile -t kthare10/airquality-forecast:latest .
-docker push kthare10/airquality-forecast:latest  # If using with Pegasus
+# Run from the workflow root. No registry push needed: Pegasus stages the .sif
+# like any other input file.
+apptainer build Apptainer/AirQuality_Forecast_Container.sif \
+    Apptainer/AirQuality_Forecast_Container.def
+
+# Verify
+apptainer exec Apptainer/AirQuality_Forecast_Container.sif \
+    python -c "import torch, sklearn, pandas; print('ok')"
+apptainer exec Apptainer/AirQuality_Forecast_Container.sif which curl wget
 ```
+
+Apptainer cannot build on macOS, and a `.sif` is single-architecture — build on
+a Linux host matching your worker nodes. See [`APPTAINER.md`](APPTAINER.md).
+The legacy `Docker/AirQuality_Forecast_Dockerfile` is kept as a fallback.
+
+<details>
+<summary>Optional: publish the image to ghcr.io</summary>
+
+Useful for sharing one build across a team or citing an immutable artifact. Needs
+a GitHub token with `write:packages`.
+
+```bash
+echo "$GHCR_TOKEN" | apptainer registry login --username <github-user> \
+    --password-stdin oras://ghcr.io
+
+TAG=$(git rev-parse --short HEAD)
+apptainer push Apptainer/AirQuality_Forecast_Container.sif \
+    oras://ghcr.io/pegasus-isi/airquality-workflow:$TAG
+
+# On the submit host, pull it back to the path the generator expects
+apptainer pull Apptainer/AirQuality_Forecast_Container.sif \
+    oras://ghcr.io/pegasus-isi/airquality-workflow:$TAG
+```
+
+Do **not** put the `oras://` URL in the transformation catalog — Pegasus supports
+`docker://`, `shub://`, `library://`, `shifter://` and `file://`, not `oras://`.
+Treat ghcr.io as a distribution channel and keep staging the local `.sif`. Details
+in [`APPTAINER.md`](APPTAINER.md).
+
+</details>
 
 ### 2. Set OpenAQ API Key (Only needed when using OpenAQ Data Source)
 

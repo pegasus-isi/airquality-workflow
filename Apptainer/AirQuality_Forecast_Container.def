@@ -1,0 +1,60 @@
+# Air-quality forecasting workflow container (OpenAQ + SAGE data, LSTM AQI
+# forecasting).
+#
+# Converted from Docker/AirQuality_Forecast_Dockerfile. `Bootstrap: docker`
+# pulls and converts the OCI base image directly, so no Docker installation is
+# needed to build the .sif.
+#
+# Build (on an x86_64 Linux host — see README):
+#   apptainer build Apptainer/AirQuality_Forecast_Container.sif \
+#       Apptainer/AirQuality_Forecast_Container.def
+
+Bootstrap: docker
+From: python:3.8.12-slim
+
+%post
+    # Install system dependencies.
+    # curl + wget are mandatory: PegasusLite downloads its worker package
+    # inside the container before the job script ever runs.
+    apt-get update && \
+        apt-get install -y --no-install-recommends \
+            git \
+            wget \
+            curl \
+            build-essential \
+            ca-certificates
+    rm -rf /var/lib/apt/lists/*
+
+    # Upgrade pip
+    pip install --no-cache-dir --upgrade pip setuptools wheel
+
+    # Base dependencies for air-quality analysis
+    pip install --no-cache-dir \
+        pandas \
+        numpy \
+        matplotlib \
+        scipy \
+        requests \
+        pytz \
+        sage-data-client
+
+    # ML dependencies for forecasting
+    pip install --no-cache-dir \
+        torch \
+        scikit-learn \
+        tqdm
+
+    # Docker's WORKDIR /app has no Apptainer equivalent; create the directory
+    # here and let Pegasus jobs cd into their own working directory at runtime.
+    mkdir -p /app/output
+
+%environment
+    # Set Python to not buffer output (important for Pegasus log capture)
+    export PYTHONUNBUFFERED=1
+
+%runscript
+    exec /bin/bash "$@"
+
+%labels
+    maintainer Komal Thareja <kthare10@renci.org>
+    description Air Quality workflow - OpenAQ/SAGE ingest and LSTM AQI forecasting

@@ -56,15 +56,27 @@ sensor data to:
 
 ### Container
 
-A single image serves all jobs: `kthare10/airquality-forecast:latest`
-(referenced as `docker://…` with `image_site="docker_hub"`, pulled by Pegasus
-as Singularity). Build spec (`Docker/AirQuality_Forecast_Dockerfile`):
+A single image serves all jobs: a locally built Apptainer image referenced as
+`file://…/Apptainer/AirQuality_Forecast_Container.sif` with
+`image_site="local"`. Pegasus stages the `.sif` like any other input file, so
+there is no registry pull. Build spec
+(`Apptainer/AirQuality_Forecast_Container.def`):
 
-- Base: `python:3.8.12-slim`
-- System: `git wget curl build-essential`
+- Bootstrap: `docker`, From: `python:3.8.12-slim` (Apptainer pulls and converts
+  the OCI base itself — no Docker installation required to build)
+- System: `git wget curl build-essential`. **`curl` and `wget` are mandatory**:
+  PegasusLite downloads its worker package inside the container before the job
+  script runs.
 - Python: `pandas numpy matplotlib scipy requests pytz sage-data-client torch
   scikit-learn tqdm`
-- Workdir `/app`, default cmd `/bin/bash`
+- `/app/output` created in `%post` (Apptainer has no `WORKDIR`; jobs `cd` into
+  their own working directory at run time); `%runscript` execs `/bin/bash`
+
+The `.sif` path is overridable with `--container-sif`. A `.sif` carries **one
+architecture** — there is no multi-arch manifest — so it MUST be built on a host
+matching the worker nodes; Apptainer cannot build on macOS at all. See
+`APPTAINER.md`. `Docker/AirQuality_Forecast_Dockerfile` is retained as a
+fallback.
 
 ---
 
@@ -280,11 +292,10 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export OPENAQ_API_KEY='your-api-key'
 
-# 1. Container (only when changing dependencies)
-cd Docker
-docker build -f AirQuality_Forecast_Dockerfile -t kthare10/airquality-forecast:latest .
-docker push kthare10/airquality-forecast:latest
-cd ..
+# 1. Container (only when changing dependencies). No registry push — Pegasus
+#    stages the .sif. Must run on a Linux host matching the workers.
+apptainer build Apptainer/AirQuality_Forecast_Container.sif \
+    Apptainer/AirQuality_Forecast_Container.def
 
 # 2. Find locations
 ./fetch_openaq_catalog.py --search --city "Los Angeles"
@@ -428,12 +439,14 @@ GitHub Actions workflow `.github/workflows/ci.yml`:
 |---|---|---|
 | `lint` | PR, push | `ruff check`, `ruff format --check` |
 | `test` | PR, push | Python 3.8 + 3.11 matrix; install `requirements.txt` + test deps; run §6 unit+integration |
-| `container` | tag `v*` or `Docker/**` change | build `AirQuality_Forecast_Dockerfile`, smoke-test (`python -c "import torch, pandas, sklearn"`), push `kthare10/airquality-forecast:<tag>` and `:latest` |
+| `container` | tag `v*` or `Apptainer/**` change | `apptainer build Apptainer/AirQuality_Forecast_Container.sif Apptainer/AirQuality_Forecast_Container.def`, smoke-test (`apptainer exec … python -c "import torch, pandas, sklearn"`), publish the `.sif` as a release artifact |
 | `e2e-smoke` | nightly cron, manual dispatch | §6.2 case 21 against a self-hosted condorpool runner (secrets: `OPENAQ_API_KEY`) |
 
-Container images MUST be tagged with the git SHA in addition to `latest`, and
-the generator SHOULD accept a `--container-tag` override (Roadmap M1) so
-workflows are reproducible against a pinned image.
+The `container` job MUST run on an `x86_64` Linux runner: a `.sif` has no
+multi-arch manifest, so an image built elsewhere will not exec on the worker
+nodes. Published `.sif` filenames MUST carry the git SHA, and the generator
+already accepts `--container-sif` so runs are reproducible against a pinned
+image.
 
 ---
 
@@ -504,7 +517,7 @@ A reimplementation is conformant when:
 | `workflow_generator.py` | DAG generator (this spec §3.3) |
 | `fetch_openaq_catalog.py` | OpenAQ fetch/search; importable module |
 | `bin/*.py` | Job implementations (§3.2) |
-| `Docker/AirQuality_Forecast_Dockerfile` | Container build (§2) |
+| `Apptainer/AirQuality_Forecast_Container.def` | Container build (§2); `Docker/AirQuality_Forecast_Dockerfile` retained as fallback |
 | `requirements.txt` | Submit-node Python deps |
 | `experiment.yml`, `kiso-airquality-experiment.yml` | Kiso/FABRIC deployment |
 | `Access-Airquality-workflow.ipynb` | ACCESS walkthrough |

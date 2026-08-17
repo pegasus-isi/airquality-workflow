@@ -111,23 +111,42 @@ class AirQualityForecastWorkflow:
 
         self.sc.add_sites(local, exec_site)
 
-    def create_transformation_catalog(self, exec_site_name="condorpool"):
+    def create_transformation_catalog(
+        self,
+        exec_site_name="condorpool",
+        container_sif="Apptainer/AirQuality_Forecast_Container.sif",
+    ):
         self.tc = TransformationCatalog()
+
+        # Both containers below are backed by the same local Apptainer .sif
+        # (the forecast image already carries the base stack plus PyTorch).
+        # Pegasus stages the file like any other input, so image_site is the
+        # site where the .sif physically lives (the submit host = "local").
+        sif_path = (
+            container_sif
+            if os.path.isabs(container_sif)
+            else os.path.join(self.wf_dir, container_sif)
+        )
+        if not os.path.exists(sif_path):
+            print(f"Warning: Apptainer image not found at {sif_path} — build it "
+                  f"first with: apptainer build {sif_path} "
+                  f"Apptainer/AirQuality_Forecast_Container.def")
+        image_url = "file://" + sif_path
 
         # Base workflow container
         airquality_container = Container(
             "airquality_container",
             container_type=Container.SINGULARITY,
-            image="docker://kthare10/airquality-forecast:latest",
-            image_site="docker_hub",
+            image=image_url,
+            image_site="local",
         )
 
         # Forecast workflow container (with PyTorch)
         forecast_container = Container(
             "airquality_forecast_container",
             container_type=Container.SINGULARITY,
-            image="docker://kthare10/airquality-forecast:latest",
-            image_site="docker_hub",
+            image=image_url,
+            image_site="local",
         )
 
         # Base transformations
@@ -745,6 +764,13 @@ if __name__ == "__main__":
         help="Filter SAGE data by measurement names (optional)",
     )
     parser.add_argument(
+        "--container-sif",
+        type=str,
+        default="Apptainer/AirQuality_Forecast_Container.sif",
+        help="Path to the Apptainer .sif image, absolute or relative to the "
+             "workflow directory (default: Apptainer/AirQuality_Forecast_Container.sif)",
+    )
+    parser.add_argument(
         "--skip-forecast",
         action="store_true",
         help="Skip LSTM forecast pipeline",
@@ -803,7 +829,10 @@ if __name__ == "__main__":
         if not args.skip_sites_catalog:
             workflow.create_sites_catalog(exec_site_name=args.execution_site_name)
 
-        workflow.create_transformation_catalog(exec_site_name=args.execution_site_name)
+        workflow.create_transformation_catalog(
+            exec_site_name=args.execution_site_name,
+            container_sif=args.container_sif,
+        )
         workflow.create_replica_catalog()
         workflow.create_workflow()
         workflow.write()

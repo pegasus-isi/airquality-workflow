@@ -20,8 +20,11 @@ export OPENAQ_API_KEY='your-api-key'  # Required for OpenAQ data source
 The container used for execution is `kthare10/airquality-forecast:latest` (Python 3.8 + PyTorch + scikit-learn).
 
 ```bash
-# Build/push Docker image if needed
-cd Docker && docker build -f AirQuality_Forecast_Dockerfile -t kthare10/airquality-forecast:latest .
+# Build the Apptainer image if needed (from the workflow root). No registry push
+# — Pegasus stages the .sif like any other input file. Apptainer cannot build on
+# macOS and a .sif is single-architecture; see APPTAINER.md.
+apptainer build Apptainer/AirQuality_Forecast_Container.sif \
+    Apptainer/AirQuality_Forecast_Container.def
 ```
 
 ## Workflow Commands
@@ -63,7 +66,7 @@ pegasus-analyzer /path/to/submit/dir
 | `bin/train_forecast_model.py` | Trains 2-layer PyTorch LSTM (hidden=128, epochs=100, early stopping patience=10) |
 | `bin/generate_forecast.py` | Runs trained model to produce 24-hour predictions with confidence intervals |
 | `bin/visualize_forecast.py` | Renders forecast PNG with historical overlay and AQI category bands |
-| `Docker/AirQuality_Forecast_Dockerfile` | Container definition for all execution jobs |
+| `Apptainer/AirQuality_Forecast_Container.def` | Container definition for all execution jobs (legacy `Docker/AirQuality_Forecast_Dockerfile` kept as a fallback) |
 
 ### Workflow DAG Dependency
 

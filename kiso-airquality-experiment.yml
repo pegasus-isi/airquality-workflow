@@ -71,6 +71,10 @@ deployment:
         - worker-node
 
 software:
+  # Apptainer is what the workflow actually needs: the submit node builds
+  # Apptainer/AirQuality_Forecast_Container.sif and Pegasus stages it to the
+  # worker nodes (image_site="local"), so no registry pull happens either side.
+  # Docker is retained only for the legacy Docker/ build path.
   docker:
     labels:
       - submit-node
