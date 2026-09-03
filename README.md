@@ -15,8 +15,12 @@ The AQI forecasting workflow extends the base air quality analysis with machine 
 
 This workflow supports two data sources:
 
-- **OpenAQ API v3**: Global air quality monitoring stations (default).
-- **SAGE Continuum**: Edge sensor data via `sage_data_client` or local JSONL exports.
+- **SAGE Continuum** (default): Edge sensor data, fetched by an in-container
+  `fetch_sage` job via `sage_data_client`, or from a local JSONL export. Needs no
+  API key and nothing installed on the submit host.
+- **OpenAQ API v3**: Global air quality monitoring stations. Fetched at
+  generation time on the submit host, so it needs `OPENAQ_API_KEY`. This is the
+  only source that supports the LSTM forecast pipeline.
 
 ### OpenAQ API v3
 
@@ -88,17 +92,29 @@ parameter_map = {
 
 ### SAGE Continuum
 
-SAGE data can be fetched directly using `sage_data_client` (recommended) or via a local JSONL file downloaded with `curl`. For details on the platform, see https://sagecontinuum.org/.
-
-**Direct query (recommended):**
+SAGE is the **default** data source. It needs no API key, and the query runs as
+a Pegasus job (`fetch_sage`) inside the workflow container — `sage_data_client`
+never has to be installed on the submit host.
 
 > Build the container first — see [Quick Start step 1](#1-build-the-container).
 > The generator warns and the jobs fail without it.
 
+**Defaults (no arguments needed):**
+
+```bash
+./workflow_generator.py
+```
+
+That runs node `W045`, plugin
+`registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0`, measurement
+`env.air_quality.conc`, over the last full UTC day.
+
+**Explicit query:**
+
 ```bash
 ./workflow_generator.py \
     --data-source sage \
-    --sage-vsn W045 \
+    --sage-vsn W045 W123 \
     --sage-plugin registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0 \
     --sage-names env.air_quality.conc \
     --start-date 2026-01-14 \
@@ -107,6 +123,9 @@ SAGE data can be fetched directly using `sage_data_client` (recommended) or via 
 ```
 
 **JSONL input (offline):**
+
+The dump is registered in the replica catalog and staged in to the `fetch_sage`
+job, which reads it instead of calling the SAGE API.
 
 ```bash
 ./workflow_generator.py \
@@ -120,21 +139,30 @@ SAGE data can be fetched directly using `sage_data_client` (recommended) or via 
 ```
 
 Notes:
-- SAGE runs the base pipeline (extract → analyze → anomaly detection) and skips the forecast pipeline by default.
-- Use `--sage-names` to filter sensor streams (e.g., `env.air_quality.conc`, `env.pm10`).
+- Each VSN in `--sage-vsn` gets its own `fetch_sage` job and its own downstream
+  pipeline; the anomaly results are merged when there is more than one.
+- SAGE runs the base pipeline (extract → analyze → anomaly detection) and skips
+  the forecast pipeline (the LSTM needs OpenAQ's history endpoint).
+- Use `--sage-names` to filter sensor streams (e.g. `env.air_quality.conc`,
+  `env.pm10`). Names the fetch job does not recognise are skipped with a warning;
+  map them with `--sage-default-parameter`.
+- `fetch_sage` retries the API three times with backoff, and DAGMan retries the
+  job twice on top of that.
 
 ## Architecture
 
 ### Workflow Structure
 
 ```
-Base Pipeline (runs in parallel):
-  Data Fetch → Extract Timeseries → Analyze → Detect Anomalies → Merge
+SAGE (default) — one branch per node VSN, base pipeline only:
+  mkdir → Fetch SAGE → Extract Timeseries ─┬→ Analyze
+                                            └→ Detect Anomalies → Merge
 
-Forecast Pipeline:
-  Data Fetch → Extract Timeseries ─────────┐
-                                           ↓
-          Fetch Historical Data → Prepare Features → Train LSTM → Generate Forecast → Visualize
+OpenAQ — catalog fetched at generation time, base + forecast pipelines:
+  mkdir → Extract Timeseries ─┬→ Analyze
+                              ├→ Detect Anomalies → Merge
+                              └→ Prepare Features ←── Fetch Historical Data
+                                      └→ Train LSTM → Generate Forecast → Visualize
 ```
 
 ### DAG Visualization
@@ -258,15 +286,14 @@ export OPENAQ_API_KEY='your-api-key-here'
 
 ### 3. Generate Workflow
 
-```bash
-# Basic usage
-./workflow_generator.py \
-    --location-ids 2178 \
-    --start-date 2024-01-15 \
-    --end-date 2024-01-16 \
-    --output workflow_forecast.yml
+Every option has a default, so the generator (and the Studio GUI's **Run**
+button) works with nothing filled in.
 
-# SAGE usage (live query)
+```bash
+# Defaults: SAGE node W045, last full UTC day
+./workflow_generator.py
+
+# SAGE, explicit
 ./workflow_generator.py \
     --data-source sage \
     --sage-vsn W045 \
@@ -276,8 +303,25 @@ export OPENAQ_API_KEY='your-api-key-here'
     --end-date 2026-01-15 \
     --output workflow_forecast.yml
 
+# OpenAQ by location ID (needs OPENAQ_API_KEY)
+./workflow_generator.py \
+    --data-source openaq \
+    --location-ids 2178 \
+    --start-date 2024-01-15 \
+    --end-date 2024-01-16 \
+    --output workflow_forecast.yml
+
+# OpenAQ by named region — IDs resolved live, no lookup needed
+./workflow_generator.py \
+    --data-source openaq \
+    --openaq-region los-angeles \
+    --openaq-max-locations 3 \
+    --start-date 2024-01-15 \
+    --output workflow_forecast.yml
+
 # Advanced options
 ./workflow_generator.py \
+    --data-source openaq \
     --location-ids 2178 1490 \
     --start-date 2024-01-15 \
     --historical-days 90 \
@@ -286,6 +330,31 @@ export OPENAQ_API_KEY='your-api-key-here'
     --execution-site condorpool \
     --output workflow_forecast.yml
 ```
+
+#### Picking OpenAQ locations
+
+Three ways, easiest first:
+
+| Approach | Flag | Notes |
+|----------|------|-------|
+| Named region | `--openaq-region los-angeles` | Resolves IDs live from a built-in bounding box |
+| Arbitrary box | `--openaq-bbox -118.7 33.7 -118.1 34.3` | `min_lon min_lat max_lon max_lat` |
+| Explicit IDs | `--location-ids 2178,1490` | Default is `2178` |
+
+Built-in regions: `bay-area`, `beijing`, `chicago`, `delhi`, `denver`,
+`houston`, `london`, `los-angeles`, `new-york`, `seattle`. Both region and bbox
+searches take the first `--openaq-max-locations` matches (default 3) and print
+the IDs and names they resolved to. For anything else, search directly:
+
+```bash
+./fetch_openaq_catalog.py --search --city "Los Angeles"
+./fetch_openaq_catalog.py --search --bbox -118.668 33.704 -118.155 34.337
+```
+
+All list options (`--location-ids`, `--sage-vsn`, `--sage-names`,
+`--parameters`, `--openaq-bbox`) accept either space-separated values or a
+single comma-separated token, so `--sage-vsn W045,W123` works from a GUI form
+field as well as from the shell.
 
 ### 4. Submit Workflow
 
@@ -306,20 +375,34 @@ pegasus-analyzer /path/to/submit/directory
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `--location-ids` | int+ | Required for OpenAQ | OpenAQ location IDs to analyze |
-| `--start-date` | YYYY-MM-DD | **Required** | Analysis start date |
+| `--data-source` | str | **sage** | Data source: `sage` or `openaq` |
+| `--start-date` | YYYY-MM-DD | yesterday (UTC) | Analysis start date |
 | `--end-date` | YYYY-MM-DD | start_date + 1 day | Analysis end date |
 | `--historical-days` | int | 90 | Days of historical data for training |
 | `--forecast-horizon` | int | 24 | Hours to forecast ahead |
 | `--parameters` | str+ | All 6 | Pollutants: pm25, pm10, o3, no2, so2, co |
 | `--execution-site` | str | condorpool | HTCondor execution site |
 | `-o, --output` | str | workflow_forecast.yml | Output YAML file |
-| `--data-source` | str | openaq | Data source: openaq or sage |
-| `--sage-input` | str | none | Path to SAGE JSONL file (offline mode) |
-| `--sage-vsn` | str | none | Filter SAGE data by VSN |
-| `--sage-plugin` | str | none | Filter SAGE data by plugin |
-| `--sage-names` | str+ | none | Filter SAGE data by measurement names |
 | `--skip-forecast` | flag | false | Skip LSTM forecast pipeline |
+
+OpenAQ options (`--data-source openaq`, needs `OPENAQ_API_KEY`):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--location-ids` | int+ | 2178 | OpenAQ location IDs to analyze |
+| `--openaq-region` | str | none | Named region; resolves IDs live (overrides `--location-ids`) |
+| `--openaq-bbox` | float×4 | none | `min_lon min_lat max_lon max_lat` (overrides `--location-ids`) |
+| `--openaq-max-locations` | int | 3 | Locations to take from a region/bbox search |
+
+SAGE options (`--data-source sage`, the default):
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `--sage-vsn` | str+ | W045 | Node VSNs; one fetch job and pipeline per node |
+| `--sage-plugin` | str | `…/seanshahkarami/air-quality:0.3.0` | Plugin filter |
+| `--sage-names` | str+ | env.air_quality.conc | Measurement name filter |
+| `--sage-input` | str | none | Pre-downloaded JSONL dump; staged in instead of querying the API |
+| `--sage-default-parameter` | str | none | Pollutant for unrecognised measurement names (default: skip) |
 
 ## LSTM Model Architecture
 

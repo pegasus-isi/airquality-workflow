@@ -13,7 +13,9 @@ scipy>=1.9.0
 # HTTP requests
 requests>=2.28.0
 
-# SAGE data access
+# SAGE data access. Not needed on the submit node — bin/fetch_sage_data.py runs
+# as a job inside the container. Listed here only for running the bin/ scripts
+# directly, outside Pegasus.
 sage-data-client>=0.7.0
 
 # Timezone handling

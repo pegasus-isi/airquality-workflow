@@ -105,8 +105,10 @@ sites:
 #   2. Runs workflow_generator.py to generate the Pegasus YAML DAG
 #   3. Calls pegasus-plan --submit to submit to the local condorpool
 #
-# Customize the --location-ids and --start-date args below.
-# Use ./fetch_openaq_catalog.py --search --city "CityName" to find IDs.
+# Customize the --location-ids and --start-date args below. --data-source is
+# passed explicitly because the generator now defaults to SAGE.
+# Use --openaq-region <name> to skip ID lookup entirely, or
+# ./fetch_openaq_catalog.py --search --city "CityName" to find IDs.
 # ---------------------------------------------------------------------------
 experiments:
   - kind: pegasus
@@ -117,6 +119,8 @@ experiments:
       generates 24-hour AQI forecasts with visualizations.
     main: |
       ./run_workflow.sh \
+        --data-source \
+        openaq \
         --location-ids \
         2178 \
         --start-date \

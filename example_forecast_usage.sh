@@ -46,6 +46,7 @@ echo ""
 
 echo "Generating standard forecast workflow..."
 ./workflow_generator.py \
+    --data-source openaq \
     --location-ids $LOCATION_ID \
     --start-date $START_DATE \
     --end-date $END_DATE \
@@ -96,6 +97,7 @@ echo ""
 
 echo "Generating multi-location forecast workflow..."
 ./workflow_generator.py \
+    --data-source openaq \
     --location-ids 2178 8118 \
     --start-date $START_DATE \
     --end-date $END_DATE \

@@ -114,7 +114,8 @@ def extract_aqi_timeseries(input_file: str, output_dir: str):
     df['datetime'] = pd.to_datetime(df['datetime'])
 
     # Group by location, parameter, and hour
-    grouped = df.groupby(['location', 'parameter', pd.Grouper(key='datetime', freq='H')])
+    # 'h' rather than the deprecated 'H', which pandas >= 2.2 rejects outright
+    grouped = df.groupby(['location', 'parameter', pd.Grouper(key='datetime', freq='h')])
 
     results = []
     for (location, parameter, hour), group in grouped:

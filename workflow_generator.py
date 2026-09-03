@@ -8,11 +8,17 @@ It runs both the base pipeline (extraction, analysis, anomaly detection) and the
 forecasting pipeline (historical data, feature prep, model training, prediction, visualization)
 in parallel after data extraction.
 
+Every argument has a default, so the workflow can be launched from the Pegasus
+Studio GUI with nothing filled in: the defaults run SAGE node W045 over the last
+full day. List arguments also accept the GUI's single comma-separated token
+("a,b,c") in addition to the shell's space-separated form.
+
 Usage:
-    ./workflow_generator_forecast.py --location-ids 2178 \
-                                      --start-date 2024-01-15 \
-                                      --historical-days 90 \
-                                      --output workflow_forecast.yml
+    ./workflow_generator.py                                   # SAGE defaults
+    ./workflow_generator.py --data-source openaq --location-ids 2178 \
+                            --start-date 2024-01-15 \
+                            --historical-days 90 \
+                            --output workflow_forecast.yml
 """
 
 import os
@@ -24,6 +30,91 @@ from datetime import datetime, timedelta
 
 # Import Pegasus API
 from Pegasus.api import *
+
+# ---------------------------------------------------------------------------
+# Defaults that make the GUI's "Run" usable without any input
+# ---------------------------------------------------------------------------
+
+# SAGE Continuum defaults — a node that publishes air-quality concentrations
+# through the seanshahkarami/air-quality plugin.
+DEFAULT_SAGE_VSN = ["W045"]
+DEFAULT_SAGE_PLUGIN = "registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0"
+DEFAULT_SAGE_NAMES = ["env.air_quality.conc"]
+
+# OpenAQ defaults. 2178 is the location used throughout this repo's examples.
+DEFAULT_OPENAQ_LOCATION_IDS = [2178]
+
+# Named regions for OpenAQ. These are bounding boxes, not hard-coded location
+# IDs: the IDs are resolved live against the OpenAQ v3 /locations endpoint at
+# generation time, so they cannot go stale.
+# Format: (min_lon, min_lat, max_lon, max_lat)
+OPENAQ_REGIONS = {
+    "los-angeles": (-118.668, 33.704, -118.155, 34.337),
+    "bay-area":    (-122.610, 37.200, -121.700, 38.100),
+    "new-york":    (-74.259, 40.477, -73.700, 40.918),
+    "chicago":     (-87.940, 41.644, -87.524, 42.023),
+    "houston":     (-95.789, 29.523, -95.014, 30.110),
+    "denver":      (-105.110, 39.614, -104.600, 39.914),
+    "seattle":     (-122.436, 47.491, -122.224, 47.734),
+    "london":      (-0.510, 51.286, 0.334, 51.692),
+    "delhi":       (76.840, 28.404, 77.348, 28.883),
+    "beijing":     (116.000, 39.700, 116.800, 40.200),
+}
+
+
+def split_list(values, cast=str, flag=""):
+    """Normalise a list argument.
+
+    Accepts the shell form (``--names a b c``) and the Studio GUI form, which
+    sends the whole list as one comma-separated token (``--names a,b,c``).
+    """
+    out = []
+    for value in values or []:
+        for part in str(value).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                out.append(cast(part))
+            except ValueError:
+                raise ValueError(f"{flag}: cannot parse {part!r} as {cast.__name__}")
+    return out
+
+
+def parse_date(value, flag):
+    """Parse a YYYY-MM-DD date, with an error message the GUI can surface."""
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"{flag}: expected YYYY-MM-DD, got {value!r}")
+
+
+def resolve_openaq_region(region, bbox, max_locations):
+    """Resolve a named region or bbox to a list of OpenAQ location IDs."""
+    if region:
+        if region not in OPENAQ_REGIONS:
+            raise ValueError(
+                f"--openaq-region: unknown region {region!r}. "
+                f"Known: {', '.join(sorted(OPENAQ_REGIONS))}"
+            )
+        bbox = OPENAQ_REGIONS[region]
+
+    sys.path.insert(0, str(Path(__file__).parent.resolve()))
+    from fetch_openaq_catalog import search_locations
+
+    print(f"Resolving OpenAQ location IDs for bbox {bbox}...")
+    df = search_locations(bbox=tuple(bbox))
+    if df.empty:
+        raise ValueError(
+            f"No OpenAQ locations found in bbox {bbox}. "
+            f"Pass --location-ids explicitly, or search with "
+            f"./fetch_openaq_catalog.py --search --bbox {' '.join(str(b) for b in bbox)}"
+        )
+
+    ids = [int(i) for i in df["id"].head(max_locations).tolist()]
+    for _, row in df.head(max_locations).iterrows():
+        print(f"  {row['id']}: {row['name']}")
+    return ids
 
 
 class AirQualityForecastWorkflow:
@@ -53,6 +144,7 @@ class AirQualityForecastWorkflow:
         sage_vsn=None,
         sage_plugin=None,
         sage_names=None,
+        sage_default_parameter=None,
         historical_days=90,
         forecast_horizon=24,
         skip_forecast=False,
@@ -68,9 +160,10 @@ class AirQualityForecastWorkflow:
         self.end_date = end_date
         self.data_source = data_source
         self.sage_input = sage_input
-        self.sage_vsn = sage_vsn
+        self.sage_vsn = sage_vsn or []
         self.sage_plugin = sage_plugin
         self.sage_names = sage_names
+        self.sage_default_parameter = sage_default_parameter
         self.historical_days = historical_days
         self.forecast_horizon = forecast_horizon
         self.skip_forecast = skip_forecast
@@ -154,6 +247,16 @@ class AirQualityForecastWorkflow:
             "mkdir", site="local", pfn="/bin/mkdir", is_stageable=False
         )
 
+        # SAGE ingest runs as a job so that sage_data_client only has to exist
+        # inside the container, never on the submit host.
+        fetch_sage = Transformation(
+            "fetch_sage",
+            site=exec_site_name,
+            pfn=os.path.join(self.wf_dir, "bin/fetch_sage_data.py"),
+            is_stageable=True,
+            container=airquality_container,
+        ).add_pegasus_profile(memory="2 GB")
+
         extract_timeseries = Transformation(
             "extract_timeseries",
             site=exec_site_name,
@@ -229,7 +332,7 @@ class AirQualityForecastWorkflow:
 
         self.tc.add_containers(airquality_container, forecast_container)
         self.tc.add_transformations(
-            mkdir, extract_timeseries, analyze_pollutants, detect_anomalies, merge,
+            mkdir, fetch_sage, extract_timeseries, analyze_pollutants, detect_anomalies, merge,
             fetch_historical, prepare_features, train_model, generate_forecast, visualize_forecast
         )
 
@@ -255,130 +358,29 @@ class AirQualityForecastWorkflow:
         self.openaq_catalog = df
         return True
 
-    def load_sage_catalog(self):
-        """Load SAGE data via JSONL file or sage_data_client and convert to catalog CSV."""
-        def map_name_to_parameter(name: str):
-            if name in ("env.air_quality.conc", "env.pm25"):
-                return "pm25"
-            if name in ("env.pm10",):
-                return "pm10"
-            return None
-
-        rows = []
-
-        if self.sage_input:
-            input_path = Path(self.sage_input)
-            if not input_path.exists():
-                print(f"Error: SAGE input file not found: {input_path}")
-                return False
-
-            import json
-            with open(input_path, "r") as handle:
-                for line in handle:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        record = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-
-                    meta = record.get("meta", {})
-                    if self.sage_vsn and meta.get("vsn") != self.sage_vsn:
-                        continue
-                    if self.sage_plugin and meta.get("plugin") != self.sage_plugin:
-                        continue
-
-                    name = record.get("name")
-                    if self.sage_names and name not in self.sage_names:
-                        continue
-
-                    parameter = map_name_to_parameter(name)
-                    if not parameter:
-                        continue
-
-                    location = meta.get("vsn") or meta.get("node") or "unknown"
-                    rows.append({
-                        "location": location,
-                        "location_id": location,
-                        "parameter": parameter,
-                        "value": record.get("value"),
-                        "unit": record.get("unit", "unknown"),
-                        "datetime": record.get("timestamp"),
-                    })
-        else:
-            try:
-                import sage_data_client
-            except ImportError:
-                print("Error: sage_data_client is not available. Install it or use --sage-input.")
-                return False
-
-            start = self.start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-            end = self.end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-            filter_dict = {}
-            if self.sage_plugin:
-                filter_dict["plugin"] = self.sage_plugin
-            if self.sage_vsn:
-                filter_dict["vsn"] = self.sage_vsn
-            if self.sage_names and len(self.sage_names) == 1:
-                filter_dict["name"] = self.sage_names[0]
-
-            df = sage_data_client.query(start=start, end=end, filter=filter_dict)
-            if df is None or df.empty:
-                print("No SAGE measurements returned for the specified filters.")
-                return False
-
-            if self.sage_names and len(self.sage_names) > 1:
-                df = df[df["name"].isin(self.sage_names)]
-
-            for _, record in df.iterrows():
-                name = record.get("name")
-                parameter = map_name_to_parameter(name)
-                if not parameter:
-                    continue
-
-                location = record.get("meta.vsn") or record.get("meta.node") or "unknown"
-                rows.append({
-                    "location": location,
-                    "location_id": location,
-                    "parameter": parameter,
-                    "value": record.get("value"),
-                    "unit": record.get("unit", "unknown"),
-                    "datetime": record.get("timestamp"),
-                })
-
-        if not rows:
-            print("No SAGE measurements matched the provided filters.")
-            return False
-
-        import pandas as pd
-        df = pd.DataFrame(rows)
-        df["datetime"] = pd.to_datetime(df["datetime"], errors="coerce", utc=True)
-        df = df.dropna(subset=["datetime"])
-        if df.empty:
-            print("No valid SAGE measurements after date parsing.")
-            return False
-
-        df["timestamp"] = df["datetime"].astype(int) // 10**9
-        df["hour_bucket"] = df["datetime"].dt.floor("h")
-
-        output_path = os.path.join(self.wf_dir, self.openaq_cache_file)
-        df.to_csv(output_path, index=False)
-        self.openaq_catalog = df
-        return True
-
     def create_replica_catalog(self):
+        """Register the workflow's generation-time inputs.
+
+        SAGE data is fetched by the ``fetch_sage`` job at run time, so the only
+        thing to register for that source is an optional pre-downloaded JSONL
+        dump. OpenAQ is still fetched here, because the location *names* it
+        returns determine the shape of the DAG.
+        """
         self.rc = ReplicaCatalog()
 
+        if self.data_source == "sage":
+            if self.sage_input:
+                input_path = Path(self.sage_input).resolve()
+                if not input_path.exists():
+                    print(f"Error: SAGE input file not found: {input_path}")
+                    sys.exit(1)
+                self.rc.add_replica("local", input_path.name, "file://" + str(input_path))
+            return
+
         if self.openaq_catalog is None:
-            if self.data_source == "sage":
-                if not self.load_sage_catalog():
-                    print("Failed to load SAGE data")
-                    sys.exit(1)
-            else:
-                if not self.fetch_openaq_catalog():
-                    print("Failed to fetch OpenAQ data")
-                    sys.exit(1)
+            if not self.fetch_openaq_catalog():
+                print("Failed to fetch OpenAQ data")
+                sys.exit(1)
 
         self.rc.add_replica(
             "local",
@@ -389,22 +391,22 @@ class AirQualityForecastWorkflow:
     def create_workflow(self):
         self.wf = Workflow(self.wf_name, infer_dependencies=True)
 
-        catalog_file = File("openaq_catalog.csv")
-
-        if self.openaq_catalog is None or self.openaq_catalog.empty:
-            print("Error: No catalog data available. Run fetch_openaq_catalog first.")
-            return
-
-        # Get unique location names for each location ID (OpenAQ) or from SAGE data
+        # Get unique location names for each location ID (OpenAQ) or, for SAGE,
+        # straight from the requested VSNs — the SAGE catalog does not exist yet
+        # at generation time, it is produced by the fetch_sage jobs.
         location_map = {}
         if self.data_source == "sage":
-            for loc_name in sorted(self.openaq_catalog["location"].unique()):
-                safe_name = loc_name.replace(' ', '_').replace('-', '_').replace('/', '_')
-                location_map[loc_name] = {
+            for vsn in self.sage_vsn:
+                safe_name = vsn.replace(' ', '_').replace('-', '_').replace('/', '_')
+                location_map[vsn] = {
                     "name": safe_name,
-                    "display_name": loc_name
+                    "display_name": vsn
                 }
         else:
+            if self.openaq_catalog is None or self.openaq_catalog.empty:
+                print("Error: No catalog data available. Run fetch_openaq_catalog first.")
+                return
+
             for loc_id in self.location_ids:
                 loc_data = self.openaq_catalog[self.openaq_catalog['location_id'] == loc_id]
                 if not loc_data.empty:
@@ -455,6 +457,51 @@ class AirQualityForecastWorkflow:
             )
             self.wf.add_jobs(mkdir_job)
 
+            # ===== INGEST =====
+
+            if self.data_source == "sage":
+                # One fetch job per node. sage_data_client lives in the
+                # container, so nothing SAGE-specific is needed on the submit
+                # host.
+                catalog_file = File(f"catalog/{location}_catalog.csv")
+                fetch_args = (
+                    f"--vsn {display_name} "
+                    f"--start {self.start_date.strftime('%Y-%m-%dT%H:%M:%SZ')} "
+                    f"--end {self.end_date.strftime('%Y-%m-%dT%H:%M:%SZ')} "
+                    f"--output catalog/{location}_catalog.csv"
+                )
+                if self.sage_plugin:
+                    fetch_args += f" --plugin {self.sage_plugin}"
+                if self.sage_names:
+                    fetch_args += f" --names {' '.join(self.sage_names)}"
+                if self.sage_default_parameter:
+                    fetch_args += f" --default-parameter {self.sage_default_parameter}"
+
+                fetch_sage_job = Job(
+                    "fetch_sage",
+                    _id=f"fetch_sage_{location}",
+                    node_label=f"fetch_sage_{location}",
+                )
+                if self.sage_input:
+                    sage_input_file = File(Path(self.sage_input).name)
+                    fetch_args += f" --input {sage_input_file.lfn}"
+                    fetch_sage_job.add_inputs(sage_input_file)
+
+                (
+                    fetch_sage_job
+                    .add_args(fetch_args)
+                    .add_outputs(catalog_file, stage_out=False, register_replica=False)
+                    .add_dagman_profile(retry="2")
+                    .add_pegasus_profiles(label=location)
+                )
+                self.wf.add_jobs(fetch_sage_job)
+                self.wf.add_dependency(mkdir_job, children=[fetch_sage_job])
+            else:
+                # OpenAQ is fetched at generation time — the location names it
+                # returns are what the DAG is built around.
+                catalog_file = File("openaq_catalog.csv")
+                fetch_sage_job = None
+
             # ===== BASE PIPELINE =====
 
             # Extract time series (shared by both pipelines)
@@ -465,13 +512,15 @@ class AirQualityForecastWorkflow:
                     _id=f"extract_{location}",
                     node_label=f"extract_{location}",
                 )
-                .add_args(f"-i openaq_catalog.csv -o timeseries/{location}")
+                .add_args(f"-i {catalog_file.lfn} -o timeseries/{location}")
                 .add_inputs(catalog_file)
                 .add_outputs(timeseries_file, stage_out=False, register_replica=False)
                 .add_pegasus_profiles(label=location)
             )
             self.wf.add_jobs(extract_job)
             self.wf.add_dependency(mkdir_job, children=[extract_job])
+            if fetch_sage_job is not None:
+                self.wf.add_dependency(fetch_sage_job, children=[extract_job])
 
             # Analyze pollutants
             analysis_png = File(f"analysis/{location}/{location}_analysis.png")
@@ -690,33 +739,59 @@ if __name__ == "__main__":
     parser.add_argument(
         "--location-ids",
         metavar="INT",
-        type=int,
-        required=False,
+        type=str,
         nargs="+",
-        help="OpenAQ location IDs (use fetch_openaq_catalog.py --search to find IDs)",
+        default=[str(i) for i in DEFAULT_OPENAQ_LOCATION_IDS],
+        help="OpenAQ location IDs, space- or comma-separated (default: "
+             f"{','.join(str(i) for i in DEFAULT_OPENAQ_LOCATION_IDS)}). "
+             "Ignored when --openaq-region or --openaq-bbox is given. "
+             "Find more with ./fetch_openaq_catalog.py --search",
+    )
+    parser.add_argument(
+        "--openaq-region",
+        choices=sorted(OPENAQ_REGIONS),
+        default=None,
+        help="Pick OpenAQ locations by named region instead of by ID; the IDs "
+             "are resolved live against the OpenAQ API",
+    )
+    parser.add_argument(
+        "--openaq-bbox",
+        metavar="FLOAT",
+        type=str,
+        nargs="+",
+        default=None,
+        help="Pick OpenAQ locations inside an arbitrary bounding box: "
+             "min_lon min_lat max_lon max_lat (space- or comma-separated)",
+    )
+    parser.add_argument(
+        "--openaq-max-locations",
+        metavar="INT",
+        type=int,
+        default=3,
+        help="How many locations to take from a region/bbox search (default: 3)",
     )
     parser.add_argument(
         "--start-date",
         metavar="STR",
-        type=lambda s: datetime.strptime(s, "%Y-%m-%d"),
-        required=True,
-        help="Start date (example: '2024-01-15')",
+        type=str,
+        default=None,
+        help="Start date, YYYY-MM-DD (default: yesterday, UTC)",
     )
     parser.add_argument(
         "--end-date",
         metavar="STR",
-        type=lambda s: datetime.strptime(s, "%Y-%m-%d"),
+        type=str,
         default=None,
-        help="End date (default: Start date + 1 day)",
+        help="End date, YYYY-MM-DD (default: start date + 1 day)",
     )
     parser.add_argument(
         "--parameters",
         metavar="STR",
         type=str,
         nargs="+",
-        choices=['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'],
         default=None,
-        help="Parameters to analyze (default: all)",
+        help="Parameters to analyze, space- or comma-separated, from "
+             "pm25 pm10 o3 no2 so2 co (default: all)",
     )
     parser.add_argument(
         "--historical-days",
@@ -734,34 +809,47 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--data-source",
-        choices=["openaq", "sage"],
-        default="openaq",
-        help="Data source (default: openaq)",
+        choices=["sage", "openaq"],
+        default="sage",
+        help="Data source (default: sage). SAGE needs no API key and is "
+             "fetched by an in-container job; openaq needs OPENAQ_API_KEY set "
+             "on the submit host",
     )
     parser.add_argument(
         "--sage-input",
         type=str,
         default=None,
-        help="Path to SAGE JSONL data file (required when data-source is sage)",
+        help="Optional pre-downloaded SAGE JSONL dump; staged in and read by "
+             "the fetch_sage job instead of querying the SAGE API",
     )
     parser.add_argument(
         "--sage-vsn",
         type=str,
-        default=None,
-        help="Filter SAGE data by VSN (optional)",
+        nargs="+",
+        default=list(DEFAULT_SAGE_VSN),
+        help="SAGE node VSNs, space- or comma-separated. One fetch job and one "
+             f"pipeline per node (default: {','.join(DEFAULT_SAGE_VSN)})",
     )
     parser.add_argument(
         "--sage-plugin",
         type=str,
-        default=None,
-        help="Filter SAGE data by plugin (optional)",
+        default=DEFAULT_SAGE_PLUGIN,
+        help=f"Filter SAGE data by plugin (default: {DEFAULT_SAGE_PLUGIN})",
     )
     parser.add_argument(
         "--sage-names",
         type=str,
         nargs="+",
+        default=list(DEFAULT_SAGE_NAMES),
+        help="SAGE measurement names, space- or comma-separated "
+             f"(default: {','.join(DEFAULT_SAGE_NAMES)})",
+    )
+    parser.add_argument(
+        "--sage-default-parameter",
+        choices=['pm25', 'pm10', 'o3', 'no2', 'so2', 'co'],
         default=None,
-        help="Filter SAGE data by measurement names (optional)",
+        help="Pollutant to assign to SAGE measurement names that the fetch job "
+             "does not recognise (default: skip unrecognised names)",
     )
     parser.add_argument(
         "--container-sif",
@@ -778,34 +866,84 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.end_date:
-        args.end_date = args.start_date + timedelta(days=1)
-
-    print("=" * 70)
-    print("AIR QUALITY FORECAST WORKFLOW GENERATOR")
-    print("=" * 70)
-    print(f"Data source: {args.data_source}")
-    if args.data_source == "openaq":
-        print(f"Location IDs: {args.location_ids}")
-    else:
-        print(f"SAGE input: {args.sage_input}")
-    print(f"Analysis period: {args.start_date.date()} to {args.end_date.date()}")
-    print(f"Historical training data: {args.historical_days} days")
-    print(f"Forecast horizon: {args.forecast_horizon} hours")
-    print(f"Execution site: {args.execution_site_name}")
-    print("=" * 70)
-
     try:
-        if args.data_source == "openaq" and not args.location_ids:
-            raise ValueError("--location-ids is required when data-source is openaq")
-        if args.data_source == "sage" and not args.sage_input:
-            try:
-                import sage_data_client  # noqa: F401
-            except ImportError:
-                raise ValueError("--sage-input is required when data-source is sage unless sage_data_client is installed")
-        if args.data_source == "sage" and not args.skip_forecast:
-            print("Warning: SAGE data does not include OpenAQ history. Skipping forecast pipeline.")
-            args.skip_forecast = True
+        # --- normalise list arguments (accept the GUI's comma form) ---
+        args.sage_vsn = split_list(args.sage_vsn, str, "--sage-vsn")
+        args.sage_names = split_list(args.sage_names, str, "--sage-names")
+        args.location_ids = split_list(args.location_ids, int, "--location-ids")
+        if args.parameters:
+            args.parameters = split_list(args.parameters, str, "--parameters")
+            unknown = set(args.parameters) - {'pm25', 'pm10', 'o3', 'no2', 'so2', 'co'}
+            if unknown:
+                raise ValueError(
+                    f"--parameters: unknown parameter(s) {', '.join(sorted(unknown))}"
+                )
+        if args.openaq_bbox:
+            args.openaq_bbox = split_list(args.openaq_bbox, float, "--openaq-bbox")
+            if len(args.openaq_bbox) != 4:
+                raise ValueError(
+                    "--openaq-bbox: expected 4 values (min_lon min_lat max_lon max_lat)"
+                )
+
+        # --- dates: default to the last full UTC day ---
+        if args.start_date:
+            args.start_date = parse_date(args.start_date, "--start-date")
+        else:
+            today = datetime.utcnow().replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            args.start_date = today - timedelta(days=1)
+            print(f"No --start-date given, defaulting to {args.start_date.date()}")
+
+        if args.end_date:
+            args.end_date = parse_date(args.end_date, "--end-date")
+        else:
+            args.end_date = args.start_date + timedelta(days=1)
+
+        if args.end_date <= args.start_date:
+            raise ValueError("--end-date must be after --start-date")
+
+        # --- source-specific validation ---
+        if args.data_source == "sage":
+            if not args.sage_vsn:
+                raise ValueError("--sage-vsn: at least one node VSN is required")
+            if not args.skip_forecast:
+                print("Note: SAGE has no OpenAQ history endpoint — "
+                      "skipping the LSTM forecast pipeline.")
+                args.skip_forecast = True
+        else:
+            if args.openaq_region or args.openaq_bbox:
+                args.location_ids = resolve_openaq_region(
+                    args.openaq_region, args.openaq_bbox, args.openaq_max_locations
+                )
+            if not args.location_ids:
+                raise ValueError(
+                    "--location-ids is required when --data-source is openaq "
+                    "(or use --openaq-region / --openaq-bbox)"
+                )
+            if not os.environ.get("OPENAQ_API_KEY"):
+                raise ValueError(
+                    "OPENAQ_API_KEY is not set. Export it before generating an "
+                    "OpenAQ workflow, or use --data-source sage (the default), "
+                    "which needs no key."
+                )
+
+        print("=" * 70)
+        print("AIR QUALITY FORECAST WORKFLOW GENERATOR")
+        print("=" * 70)
+        print(f"Data source: {args.data_source}")
+        if args.data_source == "openaq":
+            print(f"Location IDs: {args.location_ids}")
+        else:
+            print(f"SAGE nodes: {args.sage_vsn}")
+            print(f"SAGE plugin: {args.sage_plugin}")
+            print(f"SAGE names: {args.sage_names}")
+            print(f"SAGE input: {args.sage_input or '(live API query)'}")
+        print(f"Analysis period: {args.start_date.date()} to {args.end_date.date()}")
+        print(f"Historical training data: {args.historical_days} days")
+        print(f"Forecast horizon: {args.forecast_horizon} hours")
+        print(f"Execution site: {args.execution_site_name}")
+        print("=" * 70)
 
         workflow = AirQualityForecastWorkflow(
             location_ids=args.location_ids,
@@ -817,6 +955,7 @@ if __name__ == "__main__":
             sage_vsn=args.sage_vsn,
             sage_plugin=args.sage_plugin,
             sage_names=args.sage_names,
+            sage_default_parameter=args.sage_default_parameter,
             historical_days=args.historical_days,
             forecast_horizon=args.forecast_horizon,
             skip_forecast=args.skip_forecast,
