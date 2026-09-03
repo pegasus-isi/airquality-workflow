@@ -24,8 +24,8 @@ sensor data to:
 
 | Source | Mode | Pipelines run |
 |--------|------|---------------|
-| **OpenAQ API v3** (default) | Live HTTP fetch at workflow *generation* time + at *execution* time for historical data | Base + Forecast |
-| **SAGE Continuum** | Live query via `sage_data_client`, or offline JSONL file | Base only (forecast is force-skipped — SAGE lacks the OpenAQ historical API needed for training) |
+| **SAGE Continuum** (default) | Live query via `sage_data_client`, or an offline JSONL file — both run inside the container as the `fetch_sage` job, at *execution* time. No API key | Base only (forecast is force-skipped — SAGE lacks the OpenAQ historical API needed for training) |
+| **OpenAQ API v3** | Live HTTP fetch at workflow *generation* time (needs `OPENAQ_API_KEY` on the submit host) + at *execution* time for historical data | Base + Forecast |
 
 ### Out of scope
 
@@ -88,11 +88,14 @@ Two pipelines share a common fan-in point (`extract_timeseries`) and run in
 parallel per location:
 
 ```
-mkdir → extract_timeseries ──┬──→ analyze_pollutants
-                             ├──→ detect_anomalies ──→ merge   (only if >1 location)
-                             └──→ prepare_features ←── fetch_historical_data
-                                       └──→ train_model → generate_forecast → visualize_forecast
+mkdir → [fetch_sage] → extract_timeseries ──┬──→ analyze_pollutants
+                                            ├──→ detect_anomalies ──→ merge   (only if >1 location)
+                                            └──→ prepare_features ←── fetch_historical_data
+                                                      └──→ train_model → generate_forecast → visualize_forecast
 ```
+
+`fetch_sage` is present only for `--data-source sage`, one per VSN; the forecast
+branch is present only for `--data-source openaq`.
 
 Key dependency rule: `prepare_features` depends on **both**
 `extract_timeseries` and `fetch_historical_data`, which run in parallel.
@@ -107,7 +110,8 @@ is the sanitized location name (see §3.4).
 | Transformation | Script | Memory | Inputs (LFN) | Outputs (LFN) | Staged out |
 |---|---|---|---|---|---|
 | `mkdir` | `/bin/mkdir -p` (local, not stageable) | — | — | output dirs | — |
-| `extract_timeseries` | `bin/extract_aqi_timeseries.py` | 2 GB | `openaq_catalog.csv` | `timeseries/<loc>/<loc>_timeseries.json` | no |
+| `fetch_sage` | `bin/fetch_sage_data.py` | 2 GB | — (calls the SAGE API), or the `--sage-input` JSONL | `catalog/<loc>_catalog.csv` | no |
+| `extract_timeseries` | `bin/extract_aqi_timeseries.py` | 2 GB | `openaq_catalog.csv` (OpenAQ) or `catalog/<loc>_catalog.csv` (SAGE) | `timeseries/<loc>/<loc>_timeseries.json` | no |
 | `analyze_pollutants` | `bin/analyze_pollutants.py` | 2 GB | timeseries JSON | `analysis/<loc>/<loc>_analysis.png`, `analysis/<loc>/<loc>_statistics.json` | yes |
 | `detect_anomalies` | `bin/detect_anomalies.py` | 1 GB | timeseries JSON | `anomalies/<loc>/<loc>_anomalies.json` | yes |
 | `merge` | `bin/merge.py` | 1 GB | all anomaly JSONs | `merged_anomalies.json` | yes |
@@ -120,7 +124,8 @@ is the sanitized location name (see §3.4).
 Job CLI contracts (as invoked by the generator):
 
 ```
-extract_timeseries  -i openaq_catalog.csv -o timeseries/<loc>
+fetch_sage          --vsn <VSN> --start <RFC3339> --end <RFC3339> --output catalog/<loc>_catalog.csv [--plugin <img>] [--names <n> ...] [--default-parameter <p>] [--input <jsonl>]
+extract_timeseries  -i <catalog.csv> -o timeseries/<loc>
 analyze_pollutants  -i timeseries/<loc>/<loc>_timeseries.json -o analysis/<loc>
 detect_anomalies    -i timeseries/<loc>/<loc>_timeseries.json -o anomalies/<loc>/<loc>_anomalies.json -t 3.0
 merge               -i <anomaly1.json> <anomaly2.json> ... -o merged_anomalies.json
@@ -146,42 +151,62 @@ responsible for:
    execution site (default `condorpool`) with Condor profile
    `universe=vanilla` and Pegasus profile `style=condor`. Skippable with
    `--skip-sites-catalog` (for pre-configured clusters).
-3. **Transformation Catalog** — registers the container plus the 10
+3. **Transformation Catalog** — registers the container plus the 11
    transformations above; all `bin/*.py` are `is_stageable=True`.
-4. **Replica Catalog** — registers `openaq_catalog.csv`. This file is
-   produced **at generation time**:
-   - OpenAQ: call `fetch_openaq_catalog()` (imported from
-     `fetch_openaq_catalog.py`) with location IDs, dates, parameters.
-   - SAGE: read JSONL (or `sage_data_client.query`), filter by
-     `--sage-vsn` / `--sage-plugin` / `--sage-names`, map measurement names to
-     parameters (`env.air_quality.conc`/`env.pm25` → `pm25`; `env.pm10` →
-     `pm10`; everything else dropped), normalize to the same CSV schema.
+4. **Replica Catalog** — depends on the source:
+   - OpenAQ: registers `openaq_catalog.csv`, produced **at generation time** by
+     `fetch_openaq_catalog()` (imported from `fetch_openaq_catalog.py`) with
+     location IDs, dates, parameters. It has to happen at generation time
+     because the location *names* it returns determine the shape of the DAG.
+   - SAGE: registers nothing, unless `--sage-input` names a JSONL dump, which is
+     staged in to the fetch job. The catalog is produced **at run time** by the
+     `fetch_sage` job (`bin/fetch_sage_data.py`), one per VSN, writing
+     `catalog/<vsn>_catalog.csv` with the same CSV schema. Measurement names map
+     to parameters (`env.air_quality.conc`/`env.air_quality.pm2.5`/`env.pm25` →
+     `pm25`; `env.air_quality.pm10.0`/`env.pm10` → `pm10`; `env.air_quality.{o3,
+     no2,so2,co}` → the matching pollutant; everything else dropped unless
+     `--sage-default-parameter` is given). This keeps `sage_data_client` inside
+     the container — the submit host never needs it.
 5. **DAG construction** — per location, with `infer_dependencies=True` plus
-   explicit dependencies for `mkdir`, `fetch_hist`, and `prepare`.
+   explicit dependencies for `mkdir`, `fetch_sage`, `fetch_hist`, and `prepare`.
    Jobs are grouped with Pegasus `label` profiles: `<loc>` for the base
    pipeline, `<loc>_forecast` for the forecast pipeline (enables label-based
-   clustering).
+   clustering). For SAGE the locations are the requested VSNs, since the catalog
+   does not exist yet; for OpenAQ they come from the fetched catalog.
 
-Generator CLI:
+Generator CLI. **Every option has a default** so the generator runs with no
+arguments — this is what makes the Studio GUI's Run button usable. List options
+accept either space-separated values or a single comma-separated token, because
+GUI form fields submit the latter.
 
 | Option | Type / default | Notes |
 |---|---|---|
-| `--location-ids` | int+, required for OpenAQ | OpenAQ location IDs |
-| `--start-date` | `YYYY-MM-DD`, required | analysis window start |
-| `--end-date` | default `start + 1 day` | |
+| `--data-source` | `sage` \| `openaq`, default `sage` | SAGE needs no API key |
+| `--start-date` | `YYYY-MM-DD`, default yesterday (UTC) | analysis window start |
+| `--end-date` | default `start + 1 day` | must be after start |
 | `--parameters` | subset of `pm25 pm10 o3 no2 so2 co`, default all | |
 | `--historical-days` | 90 | LSTM training window |
 | `--forecast-horizon` | 24 | hours predicted |
-| `--data-source` | `openaq` \| `sage` | |
-| `--sage-input` / `--sage-vsn` / `--sage-plugin` / `--sage-names` | optional | SAGE filters; `--sage-input` required if `sage_data_client` missing |
+| `--location-ids` | int+, default `2178` | OpenAQ location IDs |
+| `--openaq-region` | one of the built-in regions, default none | resolves IDs live from a bbox; overrides `--location-ids` |
+| `--openaq-bbox` | 4 floats, default none | arbitrary bbox; overrides `--location-ids` |
+| `--openaq-max-locations` | 3 | cap on region/bbox search results |
+| `--sage-vsn` | str+, default `W045` | one fetch job + pipeline per VSN |
+| `--sage-plugin` | default `registry.sagecontinuum.org/seanshahkarami/air-quality:0.3.0` | |
+| `--sage-names` | str+, default `env.air_quality.conc` | |
+| `--sage-input` | optional | JSONL dump; staged in and read instead of the API |
+| `--sage-default-parameter` | optional | pollutant for unrecognised measurement names |
 | `--skip-forecast` | flag | forced `true` for SAGE |
 | `-e, --execution-site-name` | `condorpool` | |
 | `-s, --skip-sites-catalog` | flag | |
+| `--container-sif` | `Apptainer/AirQuality_Forecast_Container.sif` | |
 | `-o, --output` | `workflow_forecast.yml` | |
 
-Validation rules: OpenAQ requires `--location-ids`; SAGE without
-`sage_data_client` requires `--sage-input`; SAGE + forecast emits a warning
-and sets `skip_forecast=True`; empty catalog → exit 1.
+Validation rules, all raised at generation time with a message the GUI can
+surface: dates must parse as `YYYY-MM-DD` and end must follow start; SAGE
+requires at least one `--sage-vsn`; OpenAQ requires location IDs (explicit, or
+resolved from a region/bbox) **and** `OPENAQ_API_KEY` in the environment; SAGE
+sets `skip_forecast=True`; an empty OpenAQ catalog → exit 1.
 
 ### 3.4 Naming conventions
 
@@ -297,12 +322,13 @@ export OPENAQ_API_KEY='your-api-key'
 apptainer build Apptainer/AirQuality_Forecast_Container.sif \
     Apptainer/AirQuality_Forecast_Container.def
 
-# 2. Find locations
-./fetch_openaq_catalog.py --search --city "Los Angeles"
+# 2. Generate the DAG — SAGE defaults, no arguments and no API key needed
+./workflow_generator.py --output workflow_forecast.yml
 
-# 3. Generate the DAG
-./workflow_generator.py --location-ids 2178 --start-date 2024-01-15 \
-    --output workflow_forecast.yml
+#    ...or OpenAQ, by named region (IDs resolved live) or explicit IDs
+#    (./fetch_openaq_catalog.py --search --city "Los Angeles" lists IDs)
+./workflow_generator.py --data-source openaq --openaq-region los-angeles \
+    --start-date 2024-01-15 --output workflow_forecast.yml
 
 # 4. Plan + submit
 pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
@@ -340,7 +366,7 @@ tests/
 │   └── timeseries_london.json
 ├── unit/
 │   ├── test_generator_dag.py
-│   ├── test_sage_loader.py
+│   ├── test_fetch_sage_data.py
 │   ├── test_extract_timeseries.py
 │   ├── test_detect_anomalies.py
 │   ├── test_prepare_features.py
@@ -357,60 +383,74 @@ tests/
 ### 6.2 Required test cases
 
 **Generator / DAG (no network — mock `fetch_openaq_catalog`)**
-1. Single location → DAG contains exactly 9 jobs (mkdir, extract, analyze,
-   anomaly, fetch_hist, prepare, train, forecast, viz) and **no** merge job.
-2. Two locations → 18 jobs + 1 `merge_all_anomalies` job whose inputs are both
-   anomaly LFNs.
+1. Single OpenAQ location → DAG contains exactly 9 jobs (mkdir, extract,
+   analyze, anomaly, fetch_hist, prepare, train, forecast, viz) and **no**
+   merge job.
+2. Two OpenAQ locations → 18 jobs + 1 `merge_all_anomalies` job whose inputs
+   are both anomaly LFNs.
 3. `--skip-forecast` → only mkdir/extract/analyze/anomaly per location.
+   Single SAGE VSN → 5 jobs (mkdir, fetch_sage, extract, analyze, anomaly);
+   `extract_<vsn>` has `fetch_sage_<vsn>` as a parent and consumes its CSV.
 4. Dependency assertions: `prepare_<loc>` has parents `extract_<loc>` **and**
    `fetch_hist_<loc>`; `mkdir_<loc>` is root.
 5. Location sanitization: `"London N. Kensington"`, `"A-B/C"` → underscores;
    no `/`, space, or `-` in job IDs or LFN path components.
 6. `OPENAQ_API_KEY` present in `fetch_hist` job env; absent from all others.
-7. Validation errors: OpenAQ without `--location-ids` exits non-zero; SAGE
-   without input and without `sage_data_client` exits non-zero; SAGE forces
-   `skip_forecast=True` with a warning.
-8. Generated YAML round-trips through `Pegasus.api` loader / passes
-   `pegasus-plan` dry-run.
+7. Validation errors: OpenAQ without location IDs or without `OPENAQ_API_KEY`
+   exits non-zero; SAGE without a VSN exits non-zero; an unparseable or
+   out-of-order date exits non-zero; SAGE forces `skip_forecast=True` with a
+   notice.
+8. Zero-argument invocation succeeds and produces a SAGE DAG for the default
+   VSN over the last full UTC day.
+9. List options accept both `--sage-vsn W045 W123` and `--sage-vsn W045,W123`
+   and yield identical DAGs.
+10. Generated YAML round-trips through `Pegasus.api` loader / passes
+    `pegasus-plan` dry-run.
 
-**SAGE loader**
-9. JSONL filtering by VSN, plugin, and names each drop non-matching rows.
-10. Name mapping: `env.air_quality.conc` → `pm25`, `env.pm10` → `pm10`,
-    unknown names dropped; malformed JSON lines skipped without error.
-11. Output CSV has required columns and UTC-parsed datetimes; rows with
-    unparseable dates dropped; empty result → exit code 1.
+**SAGE fetch job (`bin/fetch_sage_data.py`)**
+11. JSONL filtering by VSN, plugin, and names each drop non-matching rows.
+12. Name mapping: `env.air_quality.conc` → `pm25`, `env.pm10` → `pm10`,
+    unknown names dropped with a warning (or mapped when
+    `--default-parameter` is given); malformed JSON lines skipped without error.
+13. A failed query, or one matching nothing, still writes the declared output
+    CSV (header only) and exits non-zero — never exits without the file.
+14. Output CSV has required columns and UTC-parsed datetimes; rows with
+    unparseable dates dropped; empty result → exit code 1. `timestamp` is
+    correct epoch seconds regardless of the pandas datetime resolution.
+15. A transient API error is retried `--retries` times with backoff before the
+    job gives up (`sage_data_client.query` monkeypatched to fail then succeed).
 
 **Processing scripts (each invoked via its CLI on fixtures)**
-12. `extract_aqi_timeseries.py`: produces one JSON per location with
+16. `extract_aqi_timeseries.py`: produces one JSON per location with
     monotonically increasing timestamps and AQI values computed from the
-    fixture.
-13. `detect_anomalies.py`: synthetic series with injected spikes at known
+    fixture; consumes a `fetch_sage` catalog and an OpenAQ catalog identically.
+17. `detect_anomalies.py`: synthetic series with injected spikes at known
     indices → exactly those points flagged at `-t 3.0`; threshold `-t 100`
     flags none.
-14. `prepare_features.py`: output `X.shape == (N, 168, 24)`,
+18. `prepare_features.py`: output `X.shape == (N, 168, 24)`,
     `y.shape == (N, horizon)`; scaler JSON inverts correctly
     (`inverse(transform(x)) ≈ x`); insufficient history (< lookback+horizon)
     fails with a clear message.
-15. `train_forecast_model.py`: train 2 epochs on a tiny fixture → checkpoint
+19. `train_forecast_model.py`: train 2 epochs on a tiny fixture → checkpoint
     loads, `training_info.json` records losses; loss decreases on a learnable
     synthetic signal; NaN-input data → non-zero exit with diagnostic.
-16. `generate_forecast.py`: with a fixed-seed checkpoint, output JSON matches
+20. `generate_forecast.py`: with a fixed-seed checkpoint, output JSON matches
     schema §4.6 (validate with `jsonschema`), has exactly `horizon`
     predictions, `lower ≤ predicted ≤ upper`, valid EPA category strings.
-17. `merge.py`: merging N files preserves all anomalies and location keys.
-18. `visualize_forecast.py`: produces a non-empty PNG and summary JSON
+21. `merge.py`: merging N files preserves all anomalies and location keys.
+22. `visualize_forecast.py`: produces a non-empty PNG and summary JSON
     (use `matplotlib` Agg backend).
 
 **Integration**
-19. `test_pipeline_local.py`: chain steps 12→14→15→16→18 in a tmp dir using
+23. `test_pipeline_local.py`: chain steps 16→18→19→20→22 in a tmp dir using
     only fixtures (no network, `OPENAQ_API_KEY` unset) and assert the §4.8
     tree exists with all staged-out artifacts.
-20. `test_pegasus_plan.py`: generate YAML + `pegasus-plan --dir … --dax`
+24. `test_pegasus_plan.py`: generate YAML + `pegasus-plan --dir … --dax`
     (no submit); skip with `pytest.mark.skipif` when `pegasus-plan` is not on
     PATH.
 
 **E2E smoke (manual / nightly, real credentials)**
-21. One known-good location (e.g. 2178), 1-day window, reduced
+25. One known-good location (e.g. 2178), 1-day window, reduced
     `--historical-days 30`; submit to a condorpool; poll `pegasus-status`
     until done; assert exit 0 and forecast JSON exists.
 
@@ -497,16 +537,19 @@ image.
 
 A reimplementation is conformant when:
 
-1. `./workflow_generator.py --location-ids 2178 --start-date 2024-01-15`
-   produces a YAML that `pegasus-plan` accepts, containing the job set, memory
-   profiles, and dependencies of §3.2 exactly.
-2. A full run on a condorpool with a valid `OPENAQ_API_KEY` completes with all
+1. `./workflow_generator.py --data-source openaq --location-ids 2178
+   --start-date 2024-01-15` produces a YAML that `pegasus-plan` accepts,
+   containing the job set, memory profiles, and dependencies of §3.2 exactly.
+2. `./workflow_generator.py` with **no arguments** succeeds without an API key
+   and without `sage_data_client` on the submit host, and produces a SAGE DAG
+   for the default VSN.
+3. A full run on a condorpool with a valid `OPENAQ_API_KEY` completes with all
    jobs successful and the staged-out tree of §4.8 populated.
-3. The forecast JSON validates against §4.6 with `horizon` predictions and
+4. The forecast JSON validates against §4.6 with `horizon` predictions and
    monotonically increasing datetimes.
-4. SAGE mode (`--data-source sage` with the JSONL fixture) runs the base
-   pipeline only and produces analysis + anomaly artifacts.
-5. The §6 test suite passes offline with ≥ 80% coverage of generator + bin.
+5. SAGE mode (`--data-source sage`, live or with the JSONL fixture) runs the
+   base pipeline only and produces analysis + anomaly artifacts.
+6. The §6 test suite passes offline with ≥ 80% coverage of generator + bin.
 
 ---
 
@@ -516,6 +559,7 @@ A reimplementation is conformant when:
 |---|---|
 | `workflow_generator.py` | DAG generator (this spec §3.3) |
 | `fetch_openaq_catalog.py` | OpenAQ fetch/search; importable module |
+| `bin/fetch_sage_data.py` | SAGE ingest job — keeps `sage_data_client` in the container |
 | `bin/*.py` | Job implementations (§3.2) |
 | `Apptainer/AirQuality_Forecast_Container.def` | Container build (§2); `Docker/AirQuality_Forecast_Dockerfile` retained as fallback |
 | `requirements.txt` | Submit-node Python deps |

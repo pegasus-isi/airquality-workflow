@@ -92,6 +92,7 @@ experiments:
       export OPENAQ_API_KEY="$(cat secrets/openaq_api_key)"
       cd airquality-workflow
       ./workflow_generator.py \
+        --data-source openaq \
         --location-ids 2178 \
         --start-date 2024-01-15 \
         --end-date 2024-01-16 \
