@@ -13,6 +13,19 @@ Bootstrap: docker
 From: python:3.8.12-slim
 
 %post
+    # Debian 11 (bullseye) is archived: deb.debian.org no longer serves it, and
+    # bullseye-security does not exist on archive.debian.org at all. Left alone,
+    # `apt-get update` fails, curl/wget are never installed, and the build still
+    # reports success -- producing an image in which no Pegasus job can start,
+    # because PegasusLite fetches its worker package with curl before the job
+    # script runs.
+    sed -i \
+        -e "s|http://deb.debian.org/debian|http://archive.debian.org/debian|g" \
+        -e "/security.debian.org/d" \
+        -e "/bullseye-updates/d" \
+        /etc/apt/sources.list
+    echo "Acquire::Check-Valid-Until \"false\";" > /etc/apt/apt.conf.d/99no-check-valid-until
+
     # Install system dependencies.
     # curl + wget are mandatory: PegasusLite downloads its worker package
     # inside the container before the job script ever runs.
