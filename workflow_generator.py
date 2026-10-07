@@ -229,7 +229,21 @@ class AirQualityForecastWorkflow:
     def create_transformation_catalog(
         self,
         container_sif="Apptainer/AirQuality_Forecast_Container.sif",
+        bind_workflow_dir=False,
     ):
+        """Containers and transformations; nothing here names a site.
+
+        bind_workflow_dir: on a site that stages through its own filesystem
+        (a Slurm cluster, Unity's hosted catalog) or with bypass staging,
+        pegasus.transfer.links stages inputs as symlinks to absolute paths
+        under the workflow directory. PegasusLite starts the container with
+        --no-home and binds only the job directory, so those links dangle
+        inside it and every job dies with kickstart "Unable to execute the
+        specified binary" (exit 127). Binding the workflow directory at its
+        own path makes them resolve. Never on a condor pool: inputs arrive
+        there as copies and the directory does not exist on the workers, so
+        the bind would fail every job.
+        """
         self.tc = TransformationCatalog()
 
         # Both containers below are backed by the same local Apptainer .sif
@@ -254,6 +268,9 @@ class AirQualityForecastWorkflow:
             image=image_url,
             image_site="local",
         )
+        if bind_workflow_dir:
+            airquality_container.add_pegasus_profile(
+                container_arguments=f"--bind {self.wf_dir}")
 
         # Forecast workflow container (with PyTorch)
         forecast_container = Container(
@@ -262,6 +279,9 @@ class AirQualityForecastWorkflow:
             image=image_url,
             image_site="local",
         )
+        if bind_workflow_dir:
+            forecast_container.add_pegasus_profile(
+                container_arguments=f"--bind {self.wf_dir}")
 
         # Base transformations
         mkdir = Transformation(
@@ -1102,12 +1122,20 @@ if __name__ == "__main__":
             bypass = style is not None and style != "condor"
         else:
             bypass = args.shared_filesystem == "yes"
-        print(f"Input staging: {'bypassed (shared filesystem)' if bypass else 'via staging site'}")
+        # A site that is not a condor pool stages through its own filesystem
+        # (an unknown style over a hosted catalog counts: hosted catalogs are
+        # batch sites), and then staged inputs are symlinks into wf_dir.
+        batch_site = (style not in (None, "condor")
+                      or (style is None and hosted_catalog() is not None))
+        bind_wf = batch_site or bypass
+        print(f"Input staging: {'bypassed (shared filesystem)' if bypass else 'via staging site'}"
+              + (f"; containers bind {workflow.wf_dir}" if bind_wf else ""))
         workflow.create_pegasus_properties(
             sites_yml=args.sites_yml, bypass_input_staging=bypass)
 
         workflow.create_transformation_catalog(
             container_sif=args.container_sif,
+            bind_workflow_dir=bind_wf,
         )
         workflow.create_replica_catalog()
         workflow.create_workflow()
