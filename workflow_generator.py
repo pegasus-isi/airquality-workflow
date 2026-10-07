@@ -35,8 +35,14 @@ from Pegasus.api import *
 # Site-catalog handling shared with the standalone custom_sites.py script.
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 from custom_sites import (  # noqa: E402
-    STYLES, TRAIN_TAG, ensure_sites_yml, hosted_catalog, parse_profile,
+    HOSTED_SITE, STYLES, TRAIN_TAG, ensure_sites_yml, hosted_catalog,
+    parse_profile,
 )
+
+# Execution site when -e is not given: hosted catalogs (pegasushub
+# pegasus-site-catalogs, named in ~/.pegasusrc) call their site HOSTED_SITE
+# ("compute"); with no hosted catalog the generator adds an HTCondor one.
+DEFAULT_SITE = "condorpool"
 
 # ---------------------------------------------------------------------------
 # Defaults that make the GUI's "Run" usable without any input
@@ -835,6 +841,14 @@ def setup_site_catalog(args, wf_dir):
     if style is None and hosted:
         print(f"  The hosted catalog {hosted} decides how {args.execution_site!r} "
               "submits; hosted catalogs name their site 'compute'.")
+        if args.execution_site != HOSTED_SITE:
+            # Nothing was written for this site, so planning works only if
+            # the hosted catalog happens to define it.
+            print(f"Warning: {args.execution_site!r} is not defined in "
+                  f"{args.sites_yml} and hosted catalogs normally define only "
+                  f"{HOSTED_SITE!r}: pegasus-plan will fail unless {hosted} has "
+                  f"it. Use -e {HOSTED_SITE}, or --site-style condor/slurm to "
+                  f"describe {args.execution_site!r}.")
     return style
 
 
@@ -850,9 +864,10 @@ if __name__ == "__main__":
         dest="execution_site",
         metavar="STR",
         type=str,
-        default="condorpool",
-        help="Site to plan against (default: condorpool). Hosted catalogs "
-             "(e.g. Unity) call theirs 'compute'.",
+        default=None,
+        help="Site to plan against (default: 'compute' when ~/.pegasusrc "
+             "names a hosted catalog such as Unity, which call their site "
+             "that; otherwise 'condorpool')",
     )
     parser.add_argument(
         "--site-style",
@@ -1057,6 +1072,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    if args.execution_site is None:
+        args.execution_site = HOSTED_SITE if hosted_catalog() else DEFAULT_SITE
 
     try:
         # --- normalise list arguments (accept the GUI's comma form) ---
