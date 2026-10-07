@@ -427,6 +427,25 @@ Notes:
   generous: 3 h for LSTM training and 15–60 min for everything else. Batch
   sites kill a job that exceeds its budget; condor pools ignore it.
 
+**Notes for Slurm clusters (tested on Unity):**
+
+- **Build the image on a compute node.** An unprivileged build needs
+  `--ignore-fakeroot-command`, because the `faked` daemon does not start
+  there:
+  `srun -p cpu -A <account> -t 60 -c 4 --mem=16G apptainer build --fakeroot --ignore-fakeroot-command Apptainer/AirQuality_Forecast_Container.sif Apptainer/AirQuality_Forecast_Container.def`.
+  The apt step (git, curl, compilers) fails in that mode. The jobs do not
+  need those packages; see the worker package bullet.
+- **Worker package.** The generator stages a container-compatible Pegasus
+  worker package (`rhel_8`, matched to `pegasus-version`) as
+  `pegasus::worker`, and turns off downloading inside jobs. This works
+  whatever the submit host's OS or Pegasus build is, and without curl in
+  the image.
+- **Container bind.** On batch sites the containers bind the workflow
+  directory, because staged inputs are symlinks into it and PegasusLite
+  starts containers with `--no-home`. Without the bind, every job fails with
+  kickstart "Unable to execute the specified binary" (exit 127). This bind
+  is never added on a condor pool.
+
 ### 5. Submit Workflow
 
 ```bash
