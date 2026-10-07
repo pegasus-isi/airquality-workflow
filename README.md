@@ -403,10 +403,13 @@ Against a hosted catalog, `--site-style slurm` writes only your overrides
 whole site. The style matches the hosted entry, so merging it changes nothing,
 and it lets later runs know the site is Slurm before the planner has downloaded
 the hosted file. A style that contradicts the hosted catalog is rejected.
+A site the hosted catalog does not define (e.g. `-e condorpool --site-style
+condor` next to a hosted `compute`) gets a complete entry instead; without
+`--site-style`, the generator warns that planning against it will fail.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `-e, --execution-site` | `condorpool` | Site to plan against. Hosted catalogs call theirs `compute`. |
+| `-e, --execution-site` | `compute` with a hosted catalog, else `condorpool` | Site to plan against. Hosted catalogs call theirs `compute`. |
 | `--site-style` | `auto` | `auto`: keep what exists, else add an HTCondor site. `condor`/`slurm`: (re)write this site's entry. `none`: don't touch `sites.yml`. |
 | `--queue`, `--project` | — | Partition and account on a batch site (`pegasus.queue`, `pegasus.project`). |
 | `--site-scratch` | `./work` | Slurm: shared scratch visible to the workers and the submit host. |
@@ -473,7 +476,7 @@ pegasus-analyzer /path/to/submit/directory
 | `--historical-days` | int | 90 | Days of historical data for training |
 | `--forecast-horizon` | int | 24 | Hours to forecast ahead |
 | `--parameters` | str+ | All 6 | Pollutants: pm25, pm10, o3, no2, so2, co |
-| `-e, --execution-site` | str | condorpool | Execution site; see "Choose Where It Runs" for the other site options |
+| `-e, --execution-site` | str | compute with a hosted catalog, else condorpool | Execution site; see "Choose Where It Runs" for the other site options |
 | `-o, --output` | str | workflow_forecast.yml | Output YAML file |
 | `--skip-forecast` | flag | false | Skip LSTM forecast pipeline |
 

@@ -49,6 +49,9 @@ from Pegasus.api import (
 
 STYLES = ("condor", "slurm")
 
+# The one site hosted catalogs (pegasushub/pegasus-site-catalogs) define.
+HOSTED_SITE = "compute"
+
 # Tag carried by the LSTM training job: the one long, memory-heavy step, so the
 # one a site most plausibly wants on its own partition or with more time.
 TRAIN_TAG = "train"
@@ -217,6 +220,18 @@ def _hosted_style(path, hosted, site_name):
     return site_style(entries.get(site_name))
 
 
+def _hosted_defines(path, hosted, site_name):
+    """Whether the hosted catalog defines site_name.
+
+    Read from the planner's copy of the hosted file when one is at hand;
+    before the first plan, assume only the hosted convention, "compute".
+    """
+    copy = os.path.join(os.path.dirname(os.path.abspath(path)), hosted)
+    if os.path.isfile(copy):
+        return site_name in load_sites_yml(copy)[1]
+    return site_name == HOSTED_SITE
+
+
 def ensure_sites_yml(path, site_name, wf_dir, style="auto", **site_opts):
     """Make sure planning against `site_name` works; return (action, style).
 
@@ -240,10 +255,13 @@ def ensure_sites_yml(path, site_name, wf_dir, style="auto", **site_opts):
             raise ValueError("--site-style describes the execution site; it "
                              "cannot be applied to 'local'")
         # Over a hosted catalog the hosted entry already carries the
-        # scheduler settings, so write only the overrides.
+        # scheduler settings, so write only the overrides — but only for a
+        # site the hosted catalog defines. Any other site (e.g. condorpool
+        # next to a hosted "compute") has nothing to overlay and needs a
+        # complete entry, or the planner gets a site with no submit setup.
         full = site_opts.pop("full", None)
         if full is None:
-            full = not hosted
+            full = not (hosted and _hosted_defines(path, hosted, site_name))
         to_write.append(build_compute_site(site_name, style, full=full,
                                            **site_opts))
         if not full and (_hosted_style(path, hosted, site_name)
@@ -289,7 +307,7 @@ def main():
     parser.add_argument("--full", action="store_true", default=None,
                         help="write a complete compute site rather than an "
                              "overlay (default: complete unless a hosted "
-                             "catalog is named in ~/.pegasusrc)")
+                             "catalog named in ~/.pegasusrc defines the site)")
     parser.add_argument("--scratch", metavar="DIR",
                         help="full slurm site: shared scratch the workers and "
                              "submit host both see (default: $PWD/work)")

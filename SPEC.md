@@ -201,7 +201,7 @@ GUI form fields submit the latter.
 | `--sage-input` | optional | JSONL dump; staged in and read instead of the API |
 | `--sage-default-parameter` | optional | pollutant for unrecognised measurement names |
 | `--skip-forecast` | flag | forced `true` for SAGE |
-| `-e, --execution-site` (alias `--execution-site-name`) | `condorpool` | |
+| `-e, --execution-site` (alias `--execution-site-name`) | `compute` if `~/.pegasusrc` names a hosted catalog, else `condorpool` | |
 | `--site-style` | `auto` | `auto`/`condor`/`slurm`/`none` |
 | `--queue`, `--project`, `--site-scratch` | — | batch site settings |
 | `--site-profile`, `--train-profile` | — | `NS:KEY=VALUE`, repeatable |
