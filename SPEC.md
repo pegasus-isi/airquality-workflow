@@ -146,11 +146,15 @@ key is captured at generation time and embedded in the submit files.
 responsible for:
 
 1. **Pegasus Properties** — `pegasus.transfer.threads = 16`.
-2. **Site Catalog** — `local` site with `SHARED_SCRATCH` (`./scratch`) and
-   `LOCAL_STORAGE` (`./output`) directories with `file://` file servers;
-   execution site (default `condorpool`) with Condor profile
-   `universe=vanilla` and Pegasus profile `style=condor`. Skippable with
-   `--skip-sites-catalog` (for pre-configured clusters).
+2. **Site Catalog** — the workflow is site-agnostic. Jobs carry cores,
+   memory, a wall-clock `runtime` (`TOOL_RUNTIME`) and, for training, the
+   tag `train`. `custom_sites.ensure_sites_yml()` manages `sites.yml` with
+   this precedence: a user-provided entry for the execution site, then a
+   hosted catalog (`~/.pegasusrc`), then a default HTCondor site. A `local`
+   site is always ensured. `--site-style condor|slurm` rewrites only that
+   site's entry. `pegasus.transfer.links` is always set;
+   `bypass.input.staging` is set only for glite/Slurm sites
+   (`--shared-filesystem auto`).
 3. **Transformation Catalog** — registers the container plus the 11
    transformations above; all `bin/*.py` are `is_stageable=True`.
 4. **Replica Catalog** — depends on the source:
@@ -197,8 +201,13 @@ GUI form fields submit the latter.
 | `--sage-input` | optional | JSONL dump; staged in and read instead of the API |
 | `--sage-default-parameter` | optional | pollutant for unrecognised measurement names |
 | `--skip-forecast` | flag | forced `true` for SAGE |
-| `-e, --execution-site-name` | `condorpool` | |
-| `-s, --skip-sites-catalog` | flag | |
+| `-e, --execution-site` (alias `--execution-site-name`) | `condorpool` | |
+| `--site-style` | `auto` | `auto`/`condor`/`slurm`/`none` |
+| `--queue`, `--project`, `--site-scratch` | — | batch site settings |
+| `--site-profile`, `--train-profile` | — | `NS:KEY=VALUE`, repeatable |
+| `--shared-filesystem` | `auto` | bypass input staging on Slurm only |
+| `--sites-yml` | `sites.yml` | |
+| `-s, --skip-sites-catalog` | flag | deprecated: `--site-style none` |
 | `--container-sif` | `Apptainer/AirQuality_Forecast_Container.sif` | |
 | `-o, --output` | `workflow_forecast.yml` | |
 

@@ -356,13 +356,105 @@ All list options (`--location-ids`, `--sage-vsn`, `--sage-names`,
 single comma-separated token, so `--sage-vsn W045,W123` works from a GUI form
 field as well as from the shell.
 
-### 4. Submit Workflow
+### 4. Choose Where It Runs
+
+The workflow itself names no scheduler. Each job states only cores, memory
+and a wall-clock `runtime`, and the LSTM training job carries the Pegasus
+tag `train`. Everything site-specific goes in `sites.yml`, which the
+generator manages through `custom_sites.py` using these rules, most
+specific first:
+
+1. **A `sites.yml` entry you provided** for the execution site is kept
+   untouched, whether you wrote it by hand or with `custom_sites.py`.
+2. **A hosted catalog** named in `~/.pegasusrc`
+   ([pegasushub/pegasus-site-catalogs](https://github.com/pegasushub/pegasus-site-catalogs/tree/main/conf),
+   e.g. Unity) is used as-is, and Pegasus merges `sites.yml` over it.
+3. **Otherwise, an HTCondor site is added.** With no options at all, as in
+   Pegasus Studio, the generator writes `condorpool` plus a `local` site with
+   output in `./output`.
+
+Only the execution site's entry is ever written, plus `local` if it is
+missing. Other entries in `sites.yml` are kept.
+
+**HTCondor pool (default):**
+
+```bash
+./workflow_generator.py
+```
+
+**Slurm cluster, e.g. Studio on Open OnDemand.** These are ordinary generator
+options, so they also appear in the Studio run form:
+
+```bash
+./workflow_generator.py -e compute --site-style slurm \
+    --queue cpu --project my_lab --site-scratch /scratch/$USER/airquality \
+    --train-profile pegasus:queue=cpu-long      # training only
+```
+
+**Hosted catalog (Unity):**
+
+```bash
+echo "pegasus.catalog.site.repo.file = unity.yml" >> ~/.pegasusrc
+./workflow_generator.py -e compute --site-style slurm --project my_lab
+```
+
+Against a hosted catalog, `--site-style slurm` writes only your overrides
+(account, queue, profiles) plus the site's submission style, rather than a
+whole site. The style matches the hosted entry, so merging it changes nothing,
+and it lets later runs know the site is Slurm before the planner has downloaded
+the hosted file. A style that contradicts the hosted catalog is rejected.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `-e, --execution-site` | `condorpool` | Site to plan against. Hosted catalogs call theirs `compute`. |
+| `--site-style` | `auto` | `auto`: keep what exists, else add an HTCondor site. `condor`/`slurm`: (re)write this site's entry. `none`: don't touch `sites.yml`. |
+| `--queue`, `--project` | — | Partition and account on a batch site (`pegasus.queue`, `pegasus.project`). |
+| `--site-scratch` | `./work` | Slurm: shared scratch visible to the workers and the submit host. |
+| `--site-profile NS:KEY=VALUE` | — | Any other site profile, e.g. `pegasus:glite.arguments=--constraint=avx512`. Repeatable. |
+| `--train-profile NS:KEY=VALUE` | — | Profiles for the `train` tag only (LSTM training), e.g. `pegasus:runtime=21600`. Repeatable. |
+| `--shared-filesystem` | `auto` | Let jobs read inputs, including the `.sif`, straight from the submit host (`pegasus.transfer.bypass.input.staging`). `auto` turns it on for Slurm/glite sites and off for HTCondor, where files are staged over HTCondor file transfer. |
+
+`./custom_sites.py` runs the same logic on its own, for preparing a
+`sites.yml` once and reusing it (`./custom_sites.py --help`).
+
+Notes:
+
+- **Slurm submission** goes through HTCondor's glite/BLAHP, so plan on the
+  cluster's login node with HTCondor and Pegasus installed.
+- **Tags** (`train`, and `x-tags` in `sites.yml`) need Pegasus 6.0
+  (or 5.1.3dev) at plan time. Older planners ignore them.
+- **Runtime budgets** (`TOOL_RUNTIME` in `workflow_generator.py`) are
+  generous: 3 h for LSTM training and 15–60 min for everything else. Batch
+  sites kill a job that exceeds its budget; condor pools ignore it.
+
+**Notes for Slurm clusters (tested on Unity):**
+
+- **Build the image on a compute node.** An unprivileged build needs
+  `--ignore-fakeroot-command`, because the `faked` daemon does not start
+  there:
+  `srun -p cpu -A <account> -t 60 -c 4 --mem=16G apptainer build --fakeroot --ignore-fakeroot-command Apptainer/AirQuality_Forecast_Container.sif Apptainer/AirQuality_Forecast_Container.def`.
+  The apt step (git, curl, compilers) fails in that mode. The jobs do not
+  need those packages; see the worker package bullet.
+- **Worker package.** The generator stages a container-compatible Pegasus
+  worker package (`rhel_8`, matched to `pegasus-version`) as
+  `pegasus::worker`, and turns off downloading inside jobs. This works
+  whatever the submit host's OS or Pegasus build is, and without curl in
+  the image.
+- **Container bind.** On batch sites the containers bind the workflow
+  directory, because staged inputs are symlinks into it and PegasusLite
+  starts containers with `--no-home`. Without the bind, every job fails with
+  kickstart "Unable to execute the specified binary" (exit 127). This bind
+  is never added on a condor pool.
+
+### 5. Submit Workflow
 
 ```bash
 pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
 ```
 
-### 5. Monitor Workflow
+Use the site you generated for: the generator prints the exact command.
+
+### 6. Monitor Workflow
 
 ```bash
 pegasus-status /path/to/submit/directory
@@ -381,7 +473,7 @@ pegasus-analyzer /path/to/submit/directory
 | `--historical-days` | int | 90 | Days of historical data for training |
 | `--forecast-horizon` | int | 24 | Hours to forecast ahead |
 | `--parameters` | str+ | All 6 | Pollutants: pm25, pm10, o3, no2, so2, co |
-| `--execution-site` | str | condorpool | HTCondor execution site |
+| `-e, --execution-site` | str | condorpool | Execution site; see "Choose Where It Runs" for the other site options |
 | `-o, --output` | str | workflow_forecast.yml | Output YAML file |
 | `--skip-forecast` | flag | false | Skip LSTM forecast pipeline |
 
