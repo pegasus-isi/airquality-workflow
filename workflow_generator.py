@@ -204,6 +204,14 @@ class AirQualityForecastWorkflow:
         """
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
+        # Jobs run inside a Debian 11 container, whatever the submit host is
+        # (Ubuntu 24, RHEL, ...). Use the worker package staged with the job
+        # despite the platform mismatch rather than downloading one: the
+        # container may have no curl/wget (an unprivileged --fakeroot build
+        # on a cluster cannot apt-get them) and workers may have no internet.
+        self.props["pegasus.transfer.worker.package"] = "true"
+        self.props["pegasus.transfer.worker.package.strict"] = "false"
+        self.props["pegasus.transfer.worker.package.autodownload"] = "false"
         # Symlink rather than copy when an input already sits on the
         # execution site. A no-op otherwise, so always on.
         self.props["pegasus.transfer.links"] = "true"
