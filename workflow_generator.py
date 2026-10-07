@@ -31,6 +31,12 @@ from datetime import datetime, timedelta
 # Import Pegasus API
 from Pegasus.api import *
 
+# Site-catalog handling shared with the standalone custom_sites.py script.
+sys.path.insert(0, str(Path(__file__).parent.resolve()))
+from custom_sites import (  # noqa: E402
+    STYLES, TRAIN_TAG, ensure_sites_yml, hosted_catalog, parse_profile,
+)
+
 # ---------------------------------------------------------------------------
 # Defaults that make the GUI's "Run" usable without any input
 # ---------------------------------------------------------------------------
@@ -43,6 +49,23 @@ DEFAULT_SAGE_NAMES = ["env.air_quality.conc"]
 
 # OpenAQ defaults. 2178 is the location used throughout this repo's examples.
 DEFAULT_OPENAQ_LOCATION_IDS = [2178]
+
+# Wall-clock budget per tool, in seconds. Batch sites (Slurm through glite)
+# kill a job that exceeds it, so the values are generous; condor pools ignore
+# them. Everything else about where a job runs — scheduler, partition,
+# account, scratch — belongs in the site catalog (see custom_sites.py).
+TOOL_RUNTIME = {
+    "fetch_sage": 1800,
+    "extract_timeseries": 1800,
+    "analyze_pollutants": 1800,
+    "detect_anomalies": 900,
+    "merge": 900,
+    "fetch_historical": 3600,
+    "prepare_features": 1800,
+    "train_model": 3 * 3600,
+    "generate_forecast": 1800,
+    "visualize_forecast": 900,
+}
 
 # Named regions for OpenAQ. These are bounding boxes, not hard-coded location
 # IDs: the IDs are resolved live against the OpenAQ v3 /locations endpoint at
@@ -119,14 +142,12 @@ def resolve_openaq_region(region, bbox, max_locations):
 
 class AirQualityForecastWorkflow:
     wf = None
-    sc = None
     tc = None
     rc = None
     props = None
 
     dagfile = None
     wf_dir = None
-    shared_scratch_dir = None
     local_storage_dir = None
     wf_name = "airquality_forecast"
 
@@ -152,7 +173,6 @@ class AirQualityForecastWorkflow:
     ):
         self.dagfile = dagfile
         self.wf_dir = str(Path(__file__).parent.resolve())
-        self.shared_scratch_dir = os.path.join(self.wf_dir, "scratch")
         self.local_storage_dir = os.path.join(self.wf_dir, "output")
         self.location_ids = location_ids or []
         self.parameters = parameters if parameters else ['pm25', 'pm10', 'o3', 'no2', 'so2', 'co']
@@ -170,43 +190,36 @@ class AirQualityForecastWorkflow:
         self.historical_start_date = start_date - timedelta(days=historical_days)
 
     def write(self):
-        if self.sc is not None:
-            self.sc.write()
         self.props.write()
         self.rc.write()
         self.tc.write()
         self.wf.write(file=self.dagfile)
 
-    def create_pegasus_properties(self):
+    def create_pegasus_properties(self, sites_yml="sites.yml",
+                                  bypass_input_staging=False):
+        """Planner properties.
+
+        The site catalog itself is custom_sites.py's business; naming an
+        existing sites.yml here lets pegasus-plan find it from any directory.
+        """
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
-        return
-
-    def create_sites_catalog(self, exec_site_name="condorpool"):
-        self.sc = SiteCatalog()
-
-        local = Site("local").add_directories(
-            Directory(
-                Directory.SHARED_SCRATCH, self.shared_scratch_dir
-            ).add_file_servers(
-                FileServer("file://" + self.shared_scratch_dir, Operation.ALL)
-            ),
-            Directory(Directory.LOCAL_STORAGE, self.local_storage_dir).add_file_servers(
-                FileServer("file://" + self.local_storage_dir, Operation.ALL)
-            ),
-        )
-
-        exec_site = (
-            Site(exec_site_name)
-            .add_condor_profile(universe="vanilla")
-            .add_pegasus_profile(style="condor")
-        )
-
-        self.sc.add_sites(local, exec_site)
+        # Symlink rather than copy when an input already sits on the
+        # execution site. A no-op otherwise, so always on.
+        self.props["pegasus.transfer.links"] = "true"
+        if bypass_input_staging:
+            # Jobs read inputs (notably the .sif image) straight from the
+            # submit host's paths instead of through the staging site. Only
+            # valid where workers share a filesystem with the submit host —
+            # a Slurm cluster, typically; not a condor pool staging over
+            # HTCondor file transfer.
+            self.props["pegasus.transfer.bypass.input.staging"] = "true"
+        if os.path.isfile(sites_yml):
+            self.props["pegasus.catalog.site"] = "YAML"
+            self.props["pegasus.catalog.site.file"] = os.path.abspath(sites_yml)
 
     def create_transformation_catalog(
         self,
-        exec_site_name="condorpool",
         container_sif="Apptainer/AirQuality_Forecast_Container.sif",
     ):
         self.tc = TransformationCatalog()
@@ -251,84 +264,104 @@ class AirQualityForecastWorkflow:
         # inside the container, never on the submit host.
         fetch_sage = Transformation(
             "fetch_sage",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/fetch_sage_data.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["fetch_sage"]
+        )
 
         extract_timeseries = Transformation(
             "extract_timeseries",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/extract_aqi_timeseries.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["extract_timeseries"]
+        )
 
         analyze_pollutants = Transformation(
             "analyze_pollutants",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/analyze_pollutants.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["analyze_pollutants"]
+        )
 
         detect_anomalies = Transformation(
             "detect_anomalies",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/detect_anomalies.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="1 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="1 GB", runtime=TOOL_RUNTIME["detect_anomalies"]
+        )
 
         merge = Transformation(
             "merge",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/merge.py"),
             is_stageable=True,
             container=airquality_container,
-        ).add_pegasus_profile(memory="1 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="1 GB", runtime=TOOL_RUNTIME["merge"]
+        )
 
         # Forecast transformations
         fetch_historical = Transformation(
             "fetch_historical",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/fetch_historical_data.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["fetch_historical"]
+        )
 
         prepare_features = Transformation(
             "prepare_features",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/prepare_features.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["prepare_features"]
+        )
 
         train_model = Transformation(
             "train_model",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/train_forecast_model.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="4 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="4 GB", runtime=TOOL_RUNTIME["train_model"]
+        )
 
         generate_forecast = Transformation(
             "generate_forecast",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/generate_forecast.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["generate_forecast"]
+        )
 
         visualize_forecast = Transformation(
             "visualize_forecast",
-            site=exec_site_name,
+            site="local",
             pfn=os.path.join(self.wf_dir, "bin/visualize_forecast.py"),
             is_stageable=True,
             container=forecast_container,
-        ).add_pegasus_profile(memory="2 GB")
+        ).add_pegasus_profile(
+            cores=1, memory="2 GB", runtime=TOOL_RUNTIME["visualize_forecast"]
+        )
 
         self.tc.add_containers(airquality_container, forecast_container)
         self.tc.add_transformations(
@@ -636,6 +669,11 @@ class AirQualityForecastWorkflow:
                     stage_out=True, register_replica=False
                 )
                 .add_pegasus_profiles(label=f"{location}_forecast")
+                # Site-tunable via the site catalog's "train" tag (partition,
+                # longer runtime, ...): see custom_sites.py --train.
+                # (add_profiles, not add_pegasus_profile(tag=...): the keyword
+                # only exists in Pegasus >= 5.1.3dev's Python API.)
+                .add_profiles(Namespace.PEGASUS, key="tag", value=TRAIN_TAG)
             )
             self.wf.add_jobs(train_job)
             self.wf.add_dependency(prepare_job, children=[train_job])
@@ -711,22 +749,108 @@ class AirQualityForecastWorkflow:
             print("  Forecast pipeline: fetch historical → prepare features → train LSTM → forecast → visualize")
 
 
+def setup_site_catalog(args, wf_dir):
+    """Ensure the site catalog can plan args.execution_site; return its style.
+
+    Defaults work untouched (an HTCondor site is added if nothing defines
+    the requested one), a sites.yml or hosted catalog someone provided wins,
+    and --site-style/--queue/--project/... tailor it for a batch cluster.
+    """
+    action, style = ensure_sites_yml(
+        args.sites_yml, args.execution_site, wf_dir,
+        style=args.site_style, queue=args.queue, project=args.project,
+        scratch=args.site_scratch, profiles=args.site_profile,
+        train=args.train_profile)
+    hosted = hosted_catalog()
+    print(f"Site catalog: {args.sites_yml}: {action}"
+          + (f" (merged over hosted {hosted})" if hosted else ""))
+    if style is None and hosted:
+        print(f"  The hosted catalog {hosted} decides how {args.execution_site!r} "
+              "submits; hosted catalogs name their site 'compute'.")
+    return style
+
+
 if __name__ == "__main__":
     parser = ArgumentParser(description="Pegasus Air Quality Forecast Workflow")
 
+    # --- Execution site. The workflow states only cores/memory/runtime and
+    # a "train" tag; these options shape the site catalog (custom_sites.py).
+    parser.add_argument(
+        "-e",
+        "--execution-site",
+        "--execution-site-name",
+        dest="execution_site",
+        metavar="STR",
+        type=str,
+        default="condorpool",
+        help="Site to plan against (default: condorpool). Hosted catalogs "
+             "(e.g. Unity) call theirs 'compute'.",
+    )
+    parser.add_argument(
+        "--site-style",
+        choices=("auto",) + STYLES + ("none",),
+        default="auto",
+        help="How the execution site is described in sites.yml. auto (default): "
+             "keep a sites.yml entry or hosted catalog if one exists, else add "
+             "an HTCondor site. condor/slurm: (re)write that site's entry. "
+             "none: leave sites.yml alone.",
+    )
+    parser.add_argument(
+        "--queue",
+        metavar="PARTITION",
+        help="Batch partition/queue jobs submit to (required for "
+             "--site-style slurm without a hosted catalog)",
+    )
+    parser.add_argument(
+        "--project",
+        metavar="ACCOUNT",
+        help="Allocation/account charged on a batch site",
+    )
+    parser.add_argument(
+        "--site-scratch",
+        metavar="DIR",
+        help="Slurm only: shared scratch visible to workers and the submit "
+             "host (default: ./work)",
+    )
+    parser.add_argument(
+        "--site-profile",
+        action="append",
+        default=[],
+        type=parse_profile,
+        metavar="NS:KEY=VALUE",
+        help="Extra profile on the execution site, e.g. "
+             "pegasus:glite.arguments=--constraint=avx512; repeatable",
+    )
+    parser.add_argument(
+        "--train-profile",
+        action="append",
+        default=[],
+        type=parse_profile,
+        metavar="NS:KEY=VALUE",
+        help="Profile for the LSTM training jobs only (the 'train' tag), e.g. "
+             "pegasus:queue=long or pegasus:runtime=21600; repeatable",
+    )
+    parser.add_argument(
+        "--shared-filesystem",
+        choices=("auto", "yes", "no"),
+        default="auto",
+        help="Let jobs read inputs (incl. the container image) directly from "
+             "the submit host instead of via staging. auto (default): on for a "
+             "Slurm site, off for HTCondor, which stages over file transfer.",
+    )
+    parser.add_argument(
+        "--sites-yml",
+        metavar="FILE",
+        type=str,
+        default="sites.yml",
+        help="Local site catalog (default: sites.yml). Named in the generated "
+             "properties, so pegasus-plan finds it from any directory.",
+    )
     parser.add_argument(
         "-s",
         "--skip-sites-catalog",
         action="store_true",
-        help="Skip site catalog creation",
-    )
-    parser.add_argument(
-        "-e",
-        "--execution-site-name",
-        metavar="STR",
-        type=str,
-        default="condorpool",
-        help="Execution site name (default: condorpool)",
+        help="Deprecated: same as --site-style none",
     )
     parser.add_argument(
         "-o",
@@ -942,7 +1066,7 @@ if __name__ == "__main__":
         print(f"Analysis period: {args.start_date.date()} to {args.end_date.date()}")
         print(f"Historical training data: {args.historical_days} days")
         print(f"Forecast horizon: {args.forecast_horizon} hours")
-        print(f"Execution site: {args.execution_site_name}")
+        print(f"Execution site: {args.execution_site}")
         print("=" * 70)
 
         workflow = AirQualityForecastWorkflow(
@@ -963,13 +1087,18 @@ if __name__ == "__main__":
         )
 
         print("\nGenerating workflow...")
-        workflow.create_pegasus_properties()
-
-        if not args.skip_sites_catalog:
-            workflow.create_sites_catalog(exec_site_name=args.execution_site_name)
+        if args.skip_sites_catalog:
+            args.site_style = "none"
+        style = setup_site_catalog(args, workflow.wf_dir)
+        if args.shared_filesystem == "auto":
+            bypass = style is not None and style != "condor"
+        else:
+            bypass = args.shared_filesystem == "yes"
+        print(f"Input staging: {'bypassed (shared filesystem)' if bypass else 'via staging site'}")
+        workflow.create_pegasus_properties(
+            sites_yml=args.sites_yml, bypass_input_staging=bypass)
 
         workflow.create_transformation_catalog(
-            exec_site_name=args.execution_site_name,
             container_sif=args.container_sif,
         )
         workflow.create_replica_catalog()
@@ -978,7 +1107,8 @@ if __name__ == "__main__":
 
         print(f"\n✓ Workflow written to {args.output}")
         print(f"\nTo submit the workflow:")
-        print(f"  pegasus-plan --submit -s {args.execution_site_name} -o local {args.output}")
+        print(f"  pegasus-plan --submit -s {args.execution_site} "
+              f"-o local {args.output}")
 
     except Exception as e:
         print(f"\n✗ Error creating workflow: {e}", file=sys.stderr)
