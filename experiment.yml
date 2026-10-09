@@ -104,7 +104,7 @@ sites:
 #   1. Exports OPENAQ_API_KEY from the uploaded secrets file
 #   2. Runs workflow_generator.py to generate the Pegasus YAML DAG
 #   3. Calls pegasus-plan --submit to submit to the local HTCondor pool
-#      (site compute)
+#      (Pegasus's built-in condorpool site: FABRIC has no site catalog)
 #
 # Customize the --location-ids and --start-date args below. --data-source is
 # passed explicitly because the generator now defaults to SAGE.

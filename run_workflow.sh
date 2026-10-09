@@ -20,17 +20,22 @@ else
 fi
 
 WORKFLOW_FILE="workflow_forecast.yml"
+# Pegasus's built-in HTCondor site, for a pool with no site catalog. Set
+# SITE=compute when a hosted catalog (-s FILE or ~/.pegasusrc) defines it.
+SITE="${SITE:-condorpool}"
 
-# Step 1: Generate the Pegasus workflow DAG
+# Step 1: Generate the Pegasus workflow DAG (the generator never submits)
 echo "=== Generating workflow ==="
 python3 workflow_generator.py \
+    -e "${SITE}" \
     --output "${WORKFLOW_FILE}" \
     "$@"
 
 # Step 2: Plan and submit to the local HTCondor pool
 echo "=== Submitting workflow ==="
 pegasus-plan \
+    --dir submit \
     --submit \
-    --sites compute \
+    --sites "${SITE}" \
     --output-sites local \
     "${WORKFLOW_FILE}"

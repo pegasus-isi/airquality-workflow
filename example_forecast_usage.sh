@@ -57,8 +57,9 @@ echo "Generating standard forecast workflow..."
 echo ""
 echo "✓ Workflow generated: workflow_forecast.yml"
 echo ""
-echo "To submit this workflow:"
-echo "  pegasus-plan --submit -s compute -o local workflow_forecast.yml"
+echo "To plan and submit this workflow (the generator never submits; -s = its"
+echo "-e value: compute with a hosted site catalog, condorpool on a plain pool):"
+echo "  pegasus-plan --dir submit -s compute -o local --submit workflow_forecast.yml"
 echo ""
 
 # ========================================

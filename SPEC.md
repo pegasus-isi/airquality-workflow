@@ -146,15 +146,14 @@ key is captured at generation time and embedded in the submit files.
 responsible for:
 
 1. **Pegasus Properties** — `pegasus.transfer.threads = 16`.
-2. **Site Catalog** — the workflow is site-agnostic. Jobs carry cores,
-   memory, a wall-clock `runtime` (`TOOL_RUNTIME`) and, for training, the
-   tag `train`. `custom_sites.ensure_sites_yml()` manages `sites.yml` with
-   this precedence: a user-provided entry for the execution site, then a
-   hosted catalog (`~/.pegasusrc`), then a default HTCondor site. A `local`
-   site is always ensured. `--site-style condor|slurm` rewrites only that
-   site's entry. `pegasus.transfer.links` is always set;
-   `bypass.input.staging` is set only for glite/Slurm sites
-   (`--shared-filesystem auto`).
+2. **Site Catalog** — not written by the CLI (pegasus-isi/pegasus-gromacs
+   pattern). Jobs run on `-e compute` (default), defined by a centrally
+   hosted catalog (`-s FILE` → `pegasus.catalog.site.repo.file`, or
+   `~/.pegasusrc`); `-e condorpool` on a plain HTCondor pool with no catalog.
+   `create_sites_catalog()` (local + HTCondor `compute`) is a placeholder
+   only the notebook calls. Jobs carry cores and memory; training also
+   states a 3 h `runtime`. The CLI never plans or submits: it prints the
+   `pegasus-plan` command.
 3. **Transformation Catalog** — registers the container plus the 11
    transformations above; all `bin/*.py` are `is_stageable=True`.
 4. **Replica Catalog** — depends on the source:
@@ -201,14 +200,8 @@ GUI form fields submit the latter.
 | `--sage-input` | optional | JSONL dump; staged in and read instead of the API |
 | `--sage-default-parameter` | optional | pollutant for unrecognised measurement names |
 | `--skip-forecast` | flag | forced `true` for SAGE |
-| `-e, --execution-site` (alias `--execution-site-name`) | `compute` | |
+| `-e, --execution-site-name` | `compute` | `condorpool` on a plain HTCondor pool with no site catalog |
 | `-s, --hosted-site-catalog` | FILE | hosted catalog, written to `pegasus.properties` (default: `~/.pegasusrc`'s) |
-| `--site-style` | `auto` | `auto`/`condor`/`slurm`/`none` |
-| `--queue`, `--project`, `--site-scratch` | — | batch site settings |
-| `--site-profile`, `--train-profile` | — | `NS:KEY=VALUE`, repeatable |
-| `--shared-filesystem` | `auto` | bypass input staging on Slurm only |
-| `--sites-yml` | `sites.yml` | |
-| `--skip-sites-catalog` | flag | deprecated: `--site-style none` |
 | `--container-sif` | `Apptainer/AirQuality_Forecast_Container.sif` | |
 | `-o, --output` | `workflow_forecast.yml` | |
 
@@ -341,7 +334,7 @@ apptainer build Apptainer/AirQuality_Forecast_Container.sif \
     --start-date 2024-01-15 --output workflow_forecast.yml
 
 # 4. Plan + submit
-pegasus-plan --submit -s compute -o local workflow_forecast.yml
+pegasus-plan --dir submit -s compute -o local --submit workflow_forecast.yml
 
 # 5. Monitor / debug
 pegasus-status  <submit-dir>

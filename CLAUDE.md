@@ -51,11 +51,13 @@ apptainer build Apptainer/AirQuality_Forecast_Container.sif \
 # Find OpenAQ location IDs manually
 ./fetch_openaq_catalog.py --search --city "Los Angeles"
 
-# Slurm instead of the default HTCondor site (also exposed in the Studio form)
-./workflow_generator.py -e compute --site-style slurm --queue <partition> --project <account>
+# The generator writes the DAG + catalogs and prints the plan command; it never
+# submits. Sites: -e compute (default) with a hosted catalog (-s unity.yml or
+# ~/.pegasusrc), or -e condorpool on a plain HTCondor pool with no catalog
+./workflow_generator.py -e condorpool
 
-# Submit (use the site you generated for)
-pegasus-plan --submit -s compute -o local workflow_forecast.yml
+# Plan and submit (-s = the -e value)
+pegasus-plan --dir submit -s condorpool -o local --submit workflow_forecast.yml
 
 # Monitor / debug
 pegasus-status /path/to/submit/dir
@@ -69,7 +71,7 @@ pegasus-analyzer /path/to/submit/dir
 | File | Purpose |
 |------|---------|
 | `workflow_generator.py` | Entry point — generates the Pegasus DAG YAML via `AirQualityForecastWorkflow` class |
-| `custom_sites.py` | Site-catalog logic (`ensure_sites_yml`), imported by the generator and runnable standalone. Writes only the requested site's entry (HTCondor or Slurm/glite) plus `local`; never overrides a user-provided entry or a hosted catalog in `auto` mode |
+| `Access-Airquality-workflow.ipynb` | Notebook: imports `AirQualityForecastWorkflow` and calls its methods (no copied workflow code); writes a local HTCondor site catalog with `create_sites_catalog()` and submits from an explicit cell |
 | `fetch_openaq_catalog.py` | Fetches/searches OpenAQ API v3; also importable as a module by the workflow generator |
 | `bin/fetch_sage_data.py` | **Job** — queries SAGE for one VSN and writes a catalog CSV (keeps `sage_data_client` inside the container) |
 | `bin/extract_aqi_timeseries.py` | Extracts per-location timeseries JSON from catalog CSV |
@@ -101,7 +103,7 @@ mkdir → extract_timeseries ──┬──→ analyze_pollutants
 
 ### Pegasus Catalogs (created by `workflow_generator.py`)
 
-- **Sites Catalog**: the workflow is site-agnostic. Jobs carry only cores, memory, `runtime` (`TOOL_RUNTIME`) and, for LSTM training, the tag `train`. `sites.yml` is managed by `custom_sites.ensure_sites_yml()`, in precedence order: an existing entry the user provided, then a hosted catalog named with `-s FILE` (written to `pegasus.properties`) or in `~/.pegasusrc` (site `compute`), then a default HTCondor site. `-e` always defaults to `compute`. Over a hosted catalog, `--site-style` writes an overlay only for a site the catalog defines, a full entry otherwise. A `local` site (`./scratch`, `./output`) is always ensured so `-o local` and Studio's output discovery work. `--site-style slurm --queue --project` tailors it for batch clusters. `--shared-filesystem auto` sets `pegasus.transfer.bypass.input.staging` only for glite/Slurm sites, never for condor. `pegasus.transfer.links` is always on. Transformations are registered on `local`, where the scripts live
+- **Sites Catalog**: not written by the CLI (pegasus-isi/pegasus-gromacs pattern). Jobs run on `-e compute` (default), defined by a hosted catalog named with `-s FILE` (written to `pegasus.properties` as `pegasus.catalog.site.repo.file`) or in `~/.pegasusrc`; on a plain HTCondor pool with no catalog use `-e condorpool` (Pegasus provides it). `create_sites_catalog()` (local + HTCondor `compute`) is a placeholder only the notebook calls. Jobs carry cores and memory; LSTM training also states a 3 h `runtime` (`TRAIN_MODEL_RUNTIME`). Transformations are registered on the execution site
 - **Transformation Catalog**: registers all `bin/*.py` scripts with their containers and memory profiles (1–4 GB)
 - **Replica Catalog**: for OpenAQ, registers `openaq_catalog.csv` (fetched at generation time). For SAGE, registers only an optional `--sage-input` JSONL dump — the catalog itself is produced at run time by `fetch_sage`
 
