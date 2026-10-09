@@ -38,4 +38,5 @@ pegasus-plan \
     --submit \
     --sites "${SITE}" \
     --output-sites local \
+    --output-dir "$PWD/output" \
     "${WORKFLOW_FILE}"

@@ -78,7 +78,7 @@ apptainer exec Apptainer/Earthquake_Container.sif which curl wget   # PegasusLit
 # 4. Generate (finds the .sif by default) and submit; -e condorpool for a plain
 #    HTCondor pool, or the default compute with a hosted site catalog
 ./workflow_generator.py -e condorpool -o workflow_forecast.yml
-pegasus-plan --dir submit -s condorpool -o local --submit workflow_forecast.yml
+pegasus-plan --dir submit -s condorpool -o local --output-dir "$PWD/output" --submit workflow_forecast.yml
 ```
 
 If the `.sif` lives somewhere other than `<workflow>/Apptainer/`, every generator

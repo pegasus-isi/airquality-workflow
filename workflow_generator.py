@@ -1073,9 +1073,12 @@ if __name__ == "__main__":
         workflow.write()
 
         print(f"\n✓ Workflow written to {args.output}")
+        # --output-dir: with no site catalog defining "local", Pegasus's
+        # built-in local site would stage outputs to ./wf-output instead.
         print(f"\nTo plan and submit the workflow:")
         print(f"  pegasus-plan --dir submit -s {args.execution_site_name} "
-              f"-o local --submit {args.output}")
+              f"-o local --output-dir {workflow.local_storage_dir} "
+              f"--submit {args.output}")
 
     except Exception as e:
         print(f"\n✗ Error creating workflow: {e}", file=sys.stderr)

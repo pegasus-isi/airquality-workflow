@@ -57,7 +57,7 @@ apptainer build Apptainer/AirQuality_Forecast_Container.sif \
 ./workflow_generator.py -e condorpool
 
 # Plan and submit (-s = the -e value)
-pegasus-plan --dir submit -s condorpool -o local --submit workflow_forecast.yml
+pegasus-plan --dir submit -s condorpool -o local --output-dir "$PWD/output" --submit workflow_forecast.yml
 
 # Monitor / debug
 pegasus-status /path/to/submit/dir

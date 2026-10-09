@@ -215,7 +215,17 @@ Both notebooks provision the following cluster architecture:
 3. Configure your desired sites and node specifications
 4. Run the notebook to provision the cluster
 5. Clone this repository on the submit node
-6. Run the workflow using the CLI or the [Access notebook](Access-Airquality-workflow.ipynb)
+6. Run the workflow using the CLI or the [Access notebook](Access-Airquality-workflow.ipynb).
+   A FABRIC slice is a plain HTCondor pool with no site catalog, so generate
+   with `-e condorpool` and plan on `condorpool`:
+
+   ```bash
+   ./workflow_generator.py -e condorpool
+   pegasus-plan --dir submit -s condorpool -o local --output-dir "$PWD/output" --submit workflow_forecast.yml
+   ```
+
+   In the notebook, the default `create_sites_catalog()` path already defines
+   a local HTCondor `compute` site, so no change is needed there.
 
 ## Prerequisites
 
@@ -287,7 +297,8 @@ export OPENAQ_API_KEY='your-api-key-here'
 ### 3. Generate Workflow
 
 Every option has a default, so the generator (and the Studio GUI's **Run**
-button) works with nothing filled in.
+button) works with nothing filled in. Planning still needs a site: a hosted
+site catalog, or `-e condorpool` on a plain HTCondor pool (step 4).
 
 ```bash
 # Defaults: SAGE node W045, last full UTC day
@@ -370,7 +381,7 @@ Pegasus version.
 
 ```bash
 ./workflow_generator.py -s unity.yml
-pegasus-plan --dir submit -s compute -o local --submit workflow_forecast.yml
+pegasus-plan --dir submit -s compute -o local --output-dir "$PWD/output" --submit workflow_forecast.yml
 ```
 
 **Hosted catalog, once per user** (as the ACCESS training setup does): put the
@@ -391,13 +402,14 @@ no built-in `compute`, but it provides a default `condorpool` site, so:
 
 ```bash
 ./workflow_generator.py -e condorpool
-pegasus-plan --dir submit -s condorpool -o local --submit workflow_forecast.yml
+pegasus-plan --dir submit -s condorpool -o local --output-dir "$PWD/output" --submit workflow_forecast.yml
 ```
 
-Outputs from a CLI run land in Pegasus's default local storage, `./wf-output/`.
-The notebook `Access-Airquality-workflow.ipynb` drives the same generator
-class, writes a local HTCondor `compute` site with `create_sites_catalog()`
-(outputs in `./output/`), and submits from an explicit cell.
+Outputs land in `./output/` either way: the printed plan command passes
+`--output-dir` (without it, Pegasus's built-in local site would use
+`./wf-output/`). The notebook `Access-Airquality-workflow.ipynb` drives the
+same generator class, writes a local HTCondor `compute` site with
+`create_sites_catalog()`, and submits from an explicit cell.
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -430,7 +442,7 @@ The generator writes the workflow and catalogs and prints this command; it
 never submits by itself. Use the `-e` value you generated with as `-s`:
 
 ```bash
-pegasus-plan --dir submit -s compute -o local --submit workflow_forecast.yml
+pegasus-plan --dir submit -s compute -o local --output-dir "$PWD/output" --submit workflow_forecast.yml
 ```
 
 ### 6. Monitor Workflow
