@@ -55,7 +55,7 @@ apptainer build Apptainer/AirQuality_Forecast_Container.sif \
 ./workflow_generator.py -e compute --site-style slurm --queue <partition> --project <account>
 
 # Submit (use the site you generated for)
-pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
+pegasus-plan --submit -s compute -o local workflow_forecast.yml
 
 # Monitor / debug
 pegasus-status /path/to/submit/dir
@@ -101,7 +101,7 @@ mkdir → extract_timeseries ──┬──→ analyze_pollutants
 
 ### Pegasus Catalogs (created by `workflow_generator.py`)
 
-- **Sites Catalog**: the workflow is site-agnostic. Jobs carry only cores, memory, `runtime` (`TOOL_RUNTIME`) and, for LSTM training, the tag `train`. `sites.yml` is managed by `custom_sites.ensure_sites_yml()`, in precedence order: an existing entry the user provided, then a hosted catalog from `~/.pegasusrc` (site `compute`, also the default `-e` when one is configured), then a default HTCondor `condorpool`. Over a hosted catalog, `--site-style` writes an overlay only for a site the catalog defines, a full entry otherwise. A `local` site (`./scratch`, `./output`) is always ensured so `-o local` and Studio's output discovery work. `--site-style slurm --queue --project` tailors it for batch clusters. `--shared-filesystem auto` sets `pegasus.transfer.bypass.input.staging` only for glite/Slurm sites, never for condor. `pegasus.transfer.links` is always on. Transformations are registered on `local`, where the scripts live
+- **Sites Catalog**: the workflow is site-agnostic. Jobs carry only cores, memory, `runtime` (`TOOL_RUNTIME`) and, for LSTM training, the tag `train`. `sites.yml` is managed by `custom_sites.ensure_sites_yml()`, in precedence order: an existing entry the user provided, then a hosted catalog named with `-s FILE` (written to `pegasus.properties`) or in `~/.pegasusrc` (site `compute`), then a default HTCondor site. `-e` always defaults to `compute`. Over a hosted catalog, `--site-style` writes an overlay only for a site the catalog defines, a full entry otherwise. A `local` site (`./scratch`, `./output`) is always ensured so `-o local` and Studio's output discovery work. `--site-style slurm --queue --project` tailors it for batch clusters. `--shared-filesystem auto` sets `pegasus.transfer.bypass.input.staging` only for glite/Slurm sites, never for condor. `pegasus.transfer.links` is always on. Transformations are registered on `local`, where the scripts live
 - **Transformation Catalog**: registers all `bin/*.py` scripts with their containers and memory profiles (1–4 GB)
 - **Replica Catalog**: for OpenAQ, registers `openaq_catalog.csv` (fetched at generation time). For SAGE, registers only an optional `--sage-input` JSONL dump — the catalog itself is produced at run time by `fetch_sage`
 

@@ -12,8 +12,10 @@ business, and this module writes that catalog.
 Precedence, most specific first:
 
   1. A sites.yml you wrote (by hand or with this script) — kept as-is.
-  2. A hosted catalog named in ~/.pegasusrc (pegasus.catalog.site.repo.file),
-     which Pegasus merges a local sites.yml over, key by key.
+  2. A hosted catalog (pegasus.catalog.site.repo.file), which Pegasus merges
+     a local sites.yml over, key by key. The generator names it with
+     -s/--hosted-site-catalog FILE, written to the workflow's
+     pegasus.properties; without -s, one in ~/.pegasusrc is used.
   3. A default written here: an HTCondor site, so the workflow plans with no
      setup at all (Pegasus Studio's default).
 
@@ -75,8 +77,14 @@ def parse_profile(text):
     return ns, bare, value
 
 
-def hosted_catalog(pegasusrc=None):
-    """The hosted catalog named in ~/.pegasusrc, or None."""
+def hosted_catalog(name=None, pegasusrc=None):
+    """The hosted catalog in use, or None.
+
+    `name` is the one the workflow names itself (the generator's
+    -s/--hosted-site-catalog) and wins; otherwise the one in ~/.pegasusrc.
+    """
+    if name:
+        return name
     rc = Path(pegasusrc) if pegasusrc else Path.home() / ".pegasusrc"
     name = None
     try:
@@ -232,8 +240,12 @@ def _hosted_defines(path, hosted, site_name):
     return site_name == HOSTED_SITE
 
 
-def ensure_sites_yml(path, site_name, wf_dir, style="auto", **site_opts):
+def ensure_sites_yml(path, site_name, wf_dir, style="auto", hosted=None,
+                     **site_opts):
     """Make sure planning against `site_name` works; return (action, style).
+
+    `hosted` is the hosted catalog the workflow names (-s), if any; without
+    it, one in ~/.pegasusrc counts.
 
     style "auto" keeps anything already provided and only fills gaps;
     "condor"/"slurm" (re)write the site_name entry; "none" writes nothing.
@@ -249,7 +261,7 @@ def ensure_sites_yml(path, site_name, wf_dir, style="auto", **site_opts):
     if "local" not in entries:
         to_write.append(build_local_site(wf_dir))
 
-    hosted = hosted_catalog()
+    hosted = hosted_catalog(hosted)
     if style in STYLES:
         if site_name == "local":
             raise ValueError("--site-style describes the execution site; it "
@@ -307,7 +319,7 @@ def main():
     parser.add_argument("--full", action="store_true", default=None,
                         help="write a complete compute site rather than an "
                              "overlay (default: complete unless a hosted "
-                             "catalog named in ~/.pegasusrc defines the site)")
+                             "catalog defines the site)")
     parser.add_argument("--scratch", metavar="DIR",
                         help="full slurm site: shared scratch the workers and "
                              "submit host both see (default: $PWD/work)")
@@ -329,6 +341,10 @@ def main():
                         help=f"profile on the '{TRAIN_TAG}' tag (LSTM "
                              "training only), e.g. pegasus:queue=long or "
                              "pegasus:runtime=21600; repeatable")
+    parser.add_argument("--hosted-site-catalog", metavar="FILE",
+                        help="hosted catalog the site is overlaid on, e.g. "
+                             "unity.yml (default: the one named in "
+                             "~/.pegasusrc, if any)")
     parser.add_argument("-o", "--output", default="sites.yml",
                         help="where to write (default: sites.yml — the "
                              "name Pegasus picks up from the working "
@@ -339,7 +355,8 @@ def main():
         action, _ = ensure_sites_yml(
             args.output, args.site,
             wf_dir=os.path.dirname(os.path.abspath(__file__)),
-            style=args.style, full=args.full, queue=args.queue,
+            style=args.style, hosted=args.hosted_site_catalog,
+            full=args.full, queue=args.queue,
             project=args.project, scratch=args.scratch, storage=args.storage,
             profiles=args.profile, train=args.train)
     except ValueError as exc:

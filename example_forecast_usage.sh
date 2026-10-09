@@ -58,7 +58,7 @@ echo ""
 echo "✓ Workflow generated: workflow_forecast.yml"
 echo ""
 echo "To submit this workflow:"
-echo "  pegasus-plan --submit -s condorpool -o local workflow_forecast.yml"
+echo "  pegasus-plan --submit -s compute -o local workflow_forecast.yml"
 echo ""
 
 # ========================================

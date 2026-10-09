@@ -201,13 +201,14 @@ GUI form fields submit the latter.
 | `--sage-input` | optional | JSONL dump; staged in and read instead of the API |
 | `--sage-default-parameter` | optional | pollutant for unrecognised measurement names |
 | `--skip-forecast` | flag | forced `true` for SAGE |
-| `-e, --execution-site` (alias `--execution-site-name`) | `compute` if `~/.pegasusrc` names a hosted catalog, else `condorpool` | |
+| `-e, --execution-site` (alias `--execution-site-name`) | `compute` | |
+| `-s, --hosted-site-catalog` | FILE | hosted catalog, written to `pegasus.properties` (default: `~/.pegasusrc`'s) |
 | `--site-style` | `auto` | `auto`/`condor`/`slurm`/`none` |
 | `--queue`, `--project`, `--site-scratch` | — | batch site settings |
 | `--site-profile`, `--train-profile` | — | `NS:KEY=VALUE`, repeatable |
 | `--shared-filesystem` | `auto` | bypass input staging on Slurm only |
 | `--sites-yml` | `sites.yml` | |
-| `-s, --skip-sites-catalog` | flag | deprecated: `--site-style none` |
+| `--skip-sites-catalog` | flag | deprecated: `--site-style none` |
 | `--container-sif` | `Apptainer/AirQuality_Forecast_Container.sif` | |
 | `-o, --output` | `workflow_forecast.yml` | |
 
@@ -340,7 +341,7 @@ apptainer build Apptainer/AirQuality_Forecast_Container.sif \
     --start-date 2024-01-15 --output workflow_forecast.yml
 
 # 4. Plan + submit
-pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
+pegasus-plan --submit -s compute -o local workflow_forecast.yml
 
 # 5. Monitor / debug
 pegasus-status  <submit-dir>

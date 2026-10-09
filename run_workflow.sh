@@ -31,6 +31,6 @@ python3 workflow_generator.py \
 echo "=== Submitting workflow ==="
 pegasus-plan \
     --submit \
-    --sites condorpool \
+    --sites compute \
     --output-sites local \
     "${WORKFLOW_FILE}"

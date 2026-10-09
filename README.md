@@ -327,7 +327,7 @@ button) works with nothing filled in.
     --historical-days 90 \
     --forecast-horizon 48 \
     --parameters pm25 pm10 o3 so2 \
-    --execution-site condorpool \
+    --execution-site compute \
     --output workflow_forecast.yml
 ```
 
@@ -366,12 +366,16 @@ specific first:
 
 1. **A `sites.yml` entry you provided** for the execution site is kept
    untouched, whether you wrote it by hand or with `custom_sites.py`.
-2. **A hosted catalog** named in `~/.pegasusrc`
+2. **A hosted catalog**
    ([pegasushub/pegasus-site-catalogs](https://github.com/pegasushub/pegasus-site-catalogs/tree/main/conf),
-   e.g. Unity) is used as-is, and Pegasus merges `sites.yml` over it.
+   e.g. Unity), named with `-s unity.yml` (written to `pegasus.properties`)
+   or in `~/.pegasusrc`, is used as-is, and Pegasus merges `sites.yml` over it.
 3. **Otherwise, an HTCondor site is added.** With no options at all, as in
-   Pegasus Studio, the generator writes `condorpool` plus a `local` site with
+   Pegasus Studio, the generator writes `compute` plus a `local` site with
    output in `./output`.
+
+The execution site is always called `compute` by default, the name hosted
+catalogs give their site, so `pegasus-plan -s compute` works either way.
 
 Only the execution site's entry is ever written, plus `local` if it is
 missing. Other entries in `sites.yml` are kept.
@@ -409,7 +413,8 @@ condor` next to a hosted `compute`) gets a complete entry instead; without
 
 | Option | Default | Meaning |
 |---|---|---|
-| `-e, --execution-site` | `compute` with a hosted catalog, else `condorpool` | Site to plan against. Hosted catalogs call theirs `compute`. |
+| `-e, --execution-site` | `compute` | Site to plan against. Hosted catalogs call theirs `compute`. |
+| `-s, --hosted-site-catalog` | `~/.pegasusrc`'s, if any | Hosted catalog to plan against, e.g. `unity.yml`; written to `pegasus.properties`. |
 | `--site-style` | `auto` | `auto`: keep what exists, else add an HTCondor site. `condor`/`slurm`: (re)write this site's entry. `none`: don't touch `sites.yml`. |
 | `--queue`, `--project` | — | Partition and account on a batch site (`pegasus.queue`, `pegasus.project`). |
 | `--site-scratch` | `./work` | Slurm: shared scratch visible to the workers and the submit host. |
@@ -452,7 +457,7 @@ Notes:
 ### 5. Submit Workflow
 
 ```bash
-pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
+pegasus-plan --submit -s compute -o local workflow_forecast.yml
 ```
 
 Use the site you generated for: the generator prints the exact command.
@@ -476,7 +481,7 @@ pegasus-analyzer /path/to/submit/directory
 | `--historical-days` | int | 90 | Days of historical data for training |
 | `--forecast-horizon` | int | 24 | Hours to forecast ahead |
 | `--parameters` | str+ | All 6 | Pollutants: pm25, pm10, o3, no2, so2, co |
-| `-e, --execution-site` | str | compute with a hosted catalog, else condorpool | Execution site; see "Choose Where It Runs" for the other site options |
+| `-e, --execution-site` | str | compute | Execution site; see "Choose Where It Runs" for the other site options |
 | `-o, --output` | str | workflow_forecast.yml | Output YAML file |
 | `--skip-forecast` | flag | false | Skip LSTM forecast pipeline |
 

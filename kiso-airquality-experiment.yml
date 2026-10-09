@@ -99,7 +99,7 @@ experiments:
         --historical-days 90 \
         --forecast-horizon 24 \
         --output workflow_forecast.yml
-      pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
+      pegasus-plan --submit -s compute -o local workflow_forecast.yml
     submit_node_labels:
       - submit-node
     timeout: 3600

@@ -39,11 +39,6 @@ from custom_sites import (  # noqa: E402
     parse_profile,
 )
 
-# Execution site when -e is not given: hosted catalogs (pegasushub
-# pegasus-site-catalogs, named in ~/.pegasusrc) call their site HOSTED_SITE
-# ("compute"); with no hosted catalog the generator adds an HTCondor one.
-DEFAULT_SITE = "condorpool"
-
 # ---------------------------------------------------------------------------
 # Defaults that make the GUI's "Run" usable without any input
 # ---------------------------------------------------------------------------
@@ -225,7 +220,8 @@ class AirQualityForecastWorkflow:
         self.wf.write(file=self.dagfile)
 
     def create_pegasus_properties(self, sites_yml="sites.yml",
-                                  bypass_input_staging=False):
+                                  bypass_input_staging=False,
+                                  hosted_site_catalog=None):
         """Planner properties.
 
         The site catalog itself is custom_sites.py's business; naming an
@@ -233,6 +229,11 @@ class AirQualityForecastWorkflow:
         """
         self.props = Properties()
         self.props["pegasus.transfer.threads"] = "16"
+        if hosted_site_catalog:
+            # A centrally hosted site catalog (pegasushub
+            # pegasus-site-catalogs) defines the execution site; pegasus-plan
+            # downloads and caches it, and merges sites.yml over it.
+            self.props["pegasus.catalog.site.repo.file"] = hosted_site_catalog
         # Jobs run inside a Debian 11 container, whatever the submit host is.
         # Left alone, PegasusLite ships the submit host's worker package and,
         # on a mismatch, downloads another from inside the container — which
@@ -832,10 +833,11 @@ def setup_site_catalog(args, wf_dir):
     """
     action, style = ensure_sites_yml(
         args.sites_yml, args.execution_site, wf_dir,
-        style=args.site_style, queue=args.queue, project=args.project,
+        style=args.site_style, hosted=args.hosted_site_catalog,
+        queue=args.queue, project=args.project,
         scratch=args.site_scratch, profiles=args.site_profile,
         train=args.train_profile)
-    hosted = hosted_catalog()
+    hosted = hosted_catalog(args.hosted_site_catalog)
     print(f"Site catalog: {args.sites_yml}: {action}"
           + (f" (merged over hosted {hosted})" if hosted else ""))
     if style is None and hosted:
@@ -864,10 +866,18 @@ if __name__ == "__main__":
         dest="execution_site",
         metavar="STR",
         type=str,
-        default=None,
-        help="Site to plan against (default: 'compute' when ~/.pegasusrc "
-             "names a hosted catalog such as Unity, which call their site "
-             "that; otherwise 'condorpool')",
+        default=HOSTED_SITE,
+        help=f"Site to plan against (default: {HOSTED_SITE!r}, the name "
+             "hosted catalogs give their site)",
+    )
+    parser.add_argument(
+        "-s",
+        "--hosted-site-catalog",
+        metavar="FILE",
+        help="Centrally hosted site catalog to plan against, e.g. unity.yml "
+             "(github.com/pegasushub/pegasus-site-catalogs); written to "
+             "pegasus.properties. Default: the one named in ~/.pegasusrc, "
+             "if any.",
     )
     parser.add_argument(
         "--site-style",
@@ -930,7 +940,6 @@ if __name__ == "__main__":
              "properties, so pegasus-plan finds it from any directory.",
     )
     parser.add_argument(
-        "-s",
         "--skip-sites-catalog",
         action="store_true",
         help="Deprecated: same as --site-style none",
@@ -1072,8 +1081,6 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    if args.execution_site is None:
-        args.execution_site = HOSTED_SITE if hosted_catalog() else DEFAULT_SITE
 
     try:
         # --- normalise list arguments (accept the GUI's comma form) ---
@@ -1183,7 +1190,8 @@ if __name__ == "__main__":
         # (an unknown style over a hosted catalog counts: hosted catalogs are
         # batch sites), and then staged inputs are symlinks into wf_dir.
         batch_site = (style not in (None, "condor")
-                      or (style is None and hosted_catalog() is not None))
+                      or (style is None
+                          and hosted_catalog(args.hosted_site_catalog) is not None))
         bind_wf = batch_site or bypass
         print(f"Input staging: {'bypassed (shared filesystem)' if bypass else 'via staging site'}"
               + (f"; containers bind {workflow.wf_dir}" if bind_wf else ""))
@@ -1197,7 +1205,8 @@ if __name__ == "__main__":
                   "container's worker package itself (needs curl/wget in the "
                   "image and internet on the workers)")
         workflow.create_pegasus_properties(
-            sites_yml=args.sites_yml, bypass_input_staging=bypass)
+            sites_yml=args.sites_yml, bypass_input_staging=bypass,
+            hosted_site_catalog=args.hosted_site_catalog)
 
         workflow.create_transformation_catalog(
             container_sif=args.container_sif,
