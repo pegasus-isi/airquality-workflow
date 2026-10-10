@@ -98,8 +98,9 @@ experiments:
         --end-date 2024-01-16 \
         --historical-days 90 \
         --forecast-horizon 24 \
+        -e condorpool \
         --output workflow_forecast.yml
-      pegasus-plan --submit -s condorpool -o local workflow_forecast.yml
+      pegasus-plan --dir submit -s condorpool -o local --output-dir "$PWD/output" --submit workflow_forecast.yml
     submit_node_labels:
       - submit-node
     timeout: 3600

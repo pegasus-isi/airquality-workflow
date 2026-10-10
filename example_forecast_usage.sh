@@ -57,34 +57,18 @@ echo "Generating standard forecast workflow..."
 echo ""
 echo "✓ Workflow generated: workflow_forecast.yml"
 echo ""
-echo "To submit this workflow:"
-echo "  pegasus-plan --submit -s condorpool -o local workflow_forecast.yml"
+echo "To plan and submit this workflow (the generator never submits; -s = its"
+echo "-e value: compute with a hosted site catalog, condorpool on a plain pool):"
+echo "  pegasus-plan --dir submit -s compute -o local --output-dir \"\$PWD/output\" --submit workflow_forecast.yml"
 echo ""
 
 # ========================================
 # Option 2: Edge-to-Cloud DPU Workflow
 # ========================================
-echo "=========================================="
-echo "OPTION 2: Edge-to-Cloud DPU Workflow"
-echo "=========================================="
-echo ""
-
-echo "Generating edge-to-cloud forecast workflow..."
-./workflow_generator_dpu.py \
-    --location-ids $LOCATION_ID \
-    --start-date $START_DATE \
-    --end-date $END_DATE \
-    --historical-days $HISTORICAL_DAYS \
-    --forecast-horizon $FORECAST_HORIZON \
-    --edge-site edgepool \
-    --cloud-site cloudpool \
-    --output workflow_forecast_dpu.yml
-
-echo ""
-echo "✓ Workflow generated: workflow_forecast_dpu.yml"
-echo ""
-echo "To submit this workflow:"
-echo "  pegasus-plan --submit -s edgepool -s cloudpool -o local workflow_forecast_dpu.yml"
+# The DPU variant (edge preprocessing on BlueField-3 DPUs, cloud training) has
+# its own generator in the separate airquality-workflow-dpu repository; it is
+# not part of this workflow.
+echo "OPTION 2: Edge-to-Cloud DPU Workflow -> see the airquality-workflow-dpu repository"
 echo ""
 
 # ========================================
